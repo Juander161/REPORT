@@ -1,0 +1,83 @@
+/* Report Hub · Guía de uso (contenido estático). */
+(function (RH) {
+  'use strict';
+  const el = RH.util.el;
+
+  const HTML = `
+  <header class="page-head"><div class="ph-l">
+    <div class="eyebrow">Ayuda</div>
+    <h1 class="ph-t">Guía de uso</h1>
+    <p class="ph-sub">Todo lo necesario para actualizar los tableros, comparar temporadas y compartir resultados.</p>
+  </div></header>
+
+  <div class="grid">
+    <section class="card span-6 guide">
+      <h3 class="card-t">1 · Actualizar los datos cada semana</h3>
+      <ol>
+        <li>Exporta el CSV de órdenes como siempre.</li>
+        <li>Abre <strong>Reportes</strong> en el menú y elige el reporte (por ejemplo «Tassels Only por semana»).</li>
+        <li>Selecciona el CSV, revisa el <strong>lunes de la semana 1</strong> y la <strong>temporada</strong> (por ejemplo, 2026).</li>
+        <li>Pulsa <strong>Procesar</strong>: obtienes la misma tabla de siempre, que puedes copiar a Excel.</li>
+        <li>Pulsa <strong>Guardar en el dashboard</strong>. Si ya existía esa temporada se reemplaza por la versión nueva.</li>
+      </ol>
+      <p class="muted">La temporada del año pasado se procesa <strong>una sola vez</strong>: queda guardada y no hay que volver a cargarla.</p>
+    </section>
+
+    <section class="card span-6 guide">
+      <h3 class="card-t">2 · Analizar en los dashboards</h3>
+      <ul>
+        <li><strong>Comparar:</strong> elige la temporada actual y contra cuál compararla.</li>
+        <li><strong>Periodo:</strong> «Rango» (a la fecha, últimas 4/8/13 semanas, temporada completa o personalizado) o «Una semana» con flechas para recorrerlas.</li>
+        <li><strong>Métrica:</strong> cambia entre conteos y porcentajes (por ejemplo, % de Tassels Only sobre el total).</li>
+        <li><strong>Tipo de asignación:</strong> filtra uno o varios tipos; todas las gráficas y KPIs se recalculan.</li>
+        <li>Los totales comparan siempre <strong>las mismas semanas</strong> en ambas temporadas. Una semana marcada con <strong>*</strong> todavía estaba en curso cuando se exportó el CSV.</li>
+      </ul>
+    </section>
+
+    <section class="card span-6 guide">
+      <h3 class="card-t">3 · Llevar gráficas y tablas a Excel</h3>
+      <ul>
+        <li><strong>Exportar a Excel</strong> (botón azul del dashboard): libro con resumen, tablas con fórmulas vivas y <strong>gráficas nativas de Excel</strong> que puedes editar.</li>
+        <li>Menú <strong>⋯</strong> de cada gráfica: copiar imagen (pegar en Excel, PowerPoint o correo), descargar PNG, copiar los datos o descargar un Excel solo con esa gráfica.</li>
+        <li><strong>PDF:</strong> el botón PDF abre la impresión con un diseño limpio para guardar o imprimir.</li>
+      </ul>
+    </section>
+
+    <section class="card span-6 guide">
+      <h3 class="card-t">4 · Excel como base de datos</h3>
+      <ul>
+        <li>Todo se guarda en esta computadora automáticamente.</li>
+        <li><strong>Excel vinculado</strong> (Chrome o Edge): la app escribe en un <code>REPORT_DB.xlsx</code>. Ponlo en OneDrive/SharePoint/Teams y el equipo comparte la base.</li>
+        <li><strong>Base compartida:</strong> publicando <code>data/REPORT_DB.xlsx</code> junto a la app, cada persona recibe esas temporadas al abrirla.</li>
+        <li>La hoja «Datos» está en formato largo: ideal para tablas dinámicas.</li>
+      </ul>
+    </section>
+
+    <section class="card span-6 guide">
+      <h3 class="card-t">5 · Instalar como aplicación</h3>
+      <ul>
+        <li><strong>Computadora (Chrome/Edge):</strong> botón «Instalar app» del menú lateral, o el ícono de instalar en la barra de direcciones.</li>
+        <li><strong>Android:</strong> menú del navegador → «Instalar aplicación».</li>
+        <li><strong>iPhone/iPad:</strong> Safari → Compartir → «Agregar a pantalla de inicio».</li>
+        <li>Una vez instalada funciona sin conexión; al publicarse una versión nueva verás un aviso para actualizar.</li>
+      </ul>
+    </section>
+
+    <section class="card span-6 guide">
+      <h3 class="card-t">6 · Agregar un reporte nuevo</h3>
+      <ol>
+        <li>Copia <code>reportes/plantilla.html</code> con un nombre nuevo (por ejemplo <code>reportes/gowns.html</code>) y escribe la lógica en la sección marcada.</li>
+        <li>En <code>js/registry.js</code> agrega el reporte en <code>reportes</code> y, si alimenta un tablero, su dashboard con campos y métricas.</li>
+        <li>Agrega el archivo a la lista de <code>sw.js</code> para que funcione sin conexión.</li>
+      </ol>
+      <p class="muted">El detalle paso a paso está en el README del repositorio.</p>
+    </section>
+  </div>`;
+
+  function montar(cont) {
+    cont.replaceChildren(el('div', { class: 'ayuda-view', html: HTML }));
+    return { actualizar() {}, retematizar() {} };
+  }
+
+  RH.ayuda = { montar };
+})(window.RH = window.RH || {});

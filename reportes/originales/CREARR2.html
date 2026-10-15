@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Tassels Only por semana</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 24px; }
+  label { display: inline-block; margin: 6px 16px 6px 0; }
+  input, select, button { padding: 4px; }
+  table { border-collapse: collapse; margin-top: 16px; }
+  th, td { border: 1px solid #999; padding: 4px 10px; text-align: right; }
+  th { background: #ffff00; }
+  td:first-child, td:nth-child(2) { text-align: left; }
+  tr.total td { font-weight: bold; background: #e8e8e8; }
+  #estado, #concilia, #cols { margin-top: 12px; color: #444; }
+  #concilia { font-weight: bold; }
+  #cols { font-size: 13px; line-height: 1.5; }
+  #detalle td { text-align: left; }
+  #config { margin-top: 10px; }
+  #config fieldset { border: 1px solid #999; padding: 8px 12px; }
+  #config .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 4px 16px; }
+  #config .item { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #config .item.obj { background: #e6f4ea; }
+  #config .item.ign { background: #eee; color: #777; }
+  #config .item span { font-size: 13px; }
+</style>
+</head>
+<body>
+<h2>Tassels Only por semana</h2>
+
+<label>Archivo CSV: <input type="file" id="archivo" accept=".csv"></label><br>
+
+<div id="config"></div>
+
+<label>Columna de fecha: <input id="colFecha" value="IMPORTED"></label>
+<label>Columna de tipo: <input id="colTipo" value="ASSIGNMENT TYPE"></label><br>
+<label>Lunes de la Semana 1: <input type="date" id="inicio" value="2025-06-30"></label>
+<label>Formato de fecha:
+  <select id="fmt">
+    <option value="MDY">Mes/Día/Año (11/10/2025 = 10 nov)</option>
+    <option value="DMY">Día/Mes/Año (11/10/2025 = 11 oct)</option>
+  </select>
+</label><br>
+<label><input type="checkbox" id="incluirCeros"> Incluir filas con todas las columnas objetivo en 0 (solo las demás en 0)</label><br>
+<label>Depurar semana (número, opcional): <input id="depSemana" size="4"></label><br>
+<button id="go">Procesar</button>
+<button id="copiar" disabled>Copiar tabla (para pegar en Excel)</button>
+
+<div id="estado"></div>
+<div id="concilia"></div>
+<div id="cols"></div>
+<div id="salida"></div>
+<div id="detalle"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DIA = 86400000;
+const OBJETIVO_DEFECTO = ["TASSEL QTY", "MASCOT MEDAL QTY"];
+let tsv = "";
+let datos = new Map();     // semana (número o "N/A") -> Map(tipo -> {to, ceros, filas})
+let tipos = new Set();
+let inicio = 0;
+let rolesGuardados = {};   // nombre de columna -> "obj" | "cero" | "ign"
+
+// ---------- Utilidades ----------
+function splitLinea(linea, delim) {
+  const out = []; let f = "", q = false;
+  for (let i = 0; i < linea.length; i++) {
+    const ch = linea[i];
+    if (q) {
+      if (ch === '"') { if (linea[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { out.push(f); f = ""; }
+    else f += ch;
+  }
+  out.push(f);
+  return out;
+}
+
+function detectarDelim(linea) {
+  const c = (linea.match(/,/g) || []).length;
+  const p = (linea.match(/;/g) || []).length;
+  return p > c ? ";" : ",";
+}
+
+function parseFecha(v, fmt) {
+  v = (v || "").trim();
+  if (!v) return null;
+  let y, mo, d, m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else {
+    m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (!m) return null;
+    const a = +m[1], b = +m[2];
+    y = +m[3]; if (y < 100) y += 2000;
+    if (fmt === "MDY") { mo = a; d = b; } else { d = a; mo = b; }
+  }
+  return Date.UTC(y, mo - 1, d);
+}
+
+function num(v) {
+  const n = parseFloat(String(v).replace(/,/g, ""));
+  return isNaN(n) ? 0 : n;
+}
+
+// ---------- Configuración de columnas ----------
+function rolPorDefecto(nombre) {
+  return OBJETIVO_DEFECTO.includes(nombre) ? "obj" : "cero";
+}
+
+function leerRoles() {
+  const roles = {};
+  document.querySelectorAll("#config select[data-col]").forEach(s => {
+    roles[s.dataset.col] = s.value;
+  });
+  return roles;
+}
+
+function pintarItem(sel) {
+  sel.parentElement.className = "item " + sel.value;
+}
+
+function construirConfig(columnasQty) {
+  const cont = $("config");
+  if (!columnasQty.length) { cont.innerHTML = ""; return; }
+  let h = '<fieldset><legend><b>Columnas QTY y su función</b> (' + columnasQty.length + ' encontradas)</legend>' +
+    '<div class="grid">';
+  for (const c of columnasQty) {
+    const rol = rolesGuardados[c] || rolPorDefecto(c);
+    h += '<div class="item ' + rol + '"><span>' + c + '</span>' +
+      '<select data-col="' + c + '">' +
+      '<option value="obj"' + (rol === "obj" ? " selected" : "") + '>Objetivo (cuenta)</option>' +
+      '<option value="cero"' + (rol === "cero" ? " selected" : "") + '>Debe ser 0</option>' +
+      '<option value="ign"' + (rol === "ign" ? " selected" : "") + '>Ignorar</option>' +
+      '</select></div>';
+  }
+  h += '</div></fieldset>';
+  cont.innerHTML = h;
+  cont.querySelectorAll("select").forEach(s => s.onchange = () => pintarItem(s));
+}
+
+$("archivo").onchange = async () => {
+  const f = $("archivo").files[0];
+  $("config").innerHTML = "";
+  if (!f) return;
+  try {
+    const txt = await f.slice(0, 300000).text();
+    const primera = txt.split(/\r?\n/)[0].replace(/^\uFEFF/, "");
+    const delim = detectarDelim(primera);
+    const cols = splitLinea(primera, delim).map(c => c.trim().toUpperCase());
+    construirConfig(cols.filter(c => c.endsWith(" QTY")));
+  } catch (e) {
+    $("estado").textContent = "No pude leer el encabezado: " + e.message;
+  }
+};
+
+// ---------- Tabla de resultados ----------
+function render() {
+  const incluir = $("incluirCeros").checked;
+  const listaTipos = [...tipos].sort();
+  const semanas = [...datos.keys()].filter(k => k !== "N/A").sort((a, b) => a - b);
+  if (datos.has("N/A")) semanas.push("N/A");
+
+  const enc = ["Semana", "Inicio (lunes)"];
+  listaTipos.forEach(t => enc.push(t + " Tassels Only"));
+  enc.push("Total Tassels Only", "Órdenes totales");
+
+  const lineas = [enc];
+  const acum = new Array(listaTipos.length + 2).fill(0);
+  let totTO = 0, totCeros = 0, totFilas = 0;
+
+  for (const w of semanas) {
+    const mt = datos.get(w);
+    const etiqueta = w === "N/A" ? "N/A" : "Semana " + w;
+    const lunes = w === "N/A" ? "-" : new Date(inicio + (w - 1) * 7 * DIA).toISOString().slice(0, 10);
+    const r = [etiqueta, lunes];
+    let tot = 0, ord = 0;
+    listaTipos.forEach((t, i) => {
+      const o = mt.get(t) || { to: 0, ceros: 0, filas: 0 };
+      const v = o.to + (incluir ? o.ceros : 0);
+      r.push(v); tot += v; ord += o.filas;
+      acum[i] += v;
+      totTO += o.to; totCeros += o.ceros; totFilas += o.filas;
+    });
+    r.push(tot, ord);
+    acum[listaTipos.length] += tot;
+    acum[listaTipos.length + 1] += ord;
+    lineas.push(r);
+  }
+  lineas.push(["TOTAL", "", ...acum]);
+
+  tsv = lineas.map(l => l.join("\t")).join("\n");
+  let html = "<table><tr>" + enc.map(h => "<th>" + h + "</th>").join("") + "</tr>";
+  for (let i = 1; i < lineas.length; i++) {
+    const esTotal = i === lineas.length - 1;
+    html += "<tr" + (esTotal ? ' class="total"' : "") + ">" +
+      lineas[i].map(c => "<td>" + c + "</td>").join("") + "</tr>";
+  }
+  $("salida").innerHTML = html + "</table>";
+
+  $("concilia").textContent =
+    "Con alguna columna objetivo > 0 y las demás en 0: " + totTO.toLocaleString() +
+    " | Con todo en 0: " + totCeros.toLocaleString() +
+    " | Suma de ambos (equivale al filtro manual): " + (totTO + totCeros).toLocaleString() +
+    " | Órdenes totales del archivo: " + totFilas.toLocaleString();
+}
+
+// ---------- Procesamiento ----------
+async function procesar() {
+  const file = $("archivo").files[0];
+  if (!file) { alert("Selecciona el archivo CSV"); return; }
+
+  const COL_FECHA = $("colFecha").value.trim().toUpperCase();
+  const COL_TIPO = $("colTipo").value.trim().toUpperCase();
+  const fmt = $("fmt").value;
+  inicio = Date.parse($("inicio").value);
+  rolesGuardados = leerRoles();
+
+  const dep = $("depSemana").value.trim();
+  const detalle = [];
+  const LIMITE_DETALLE = 3000;
+
+  let iFecha = -1, iTipo = -1, iObj = [], iCero = [], iIgn = [];
+  let header = null;
+  datos = new Map();
+  tipos = new Set();
+  let filas = 0, fechasMalas = 0, antesDeInicio = 0;
+
+  function emitir(row) {
+    if (row.length === 1 && row[0] === "") return;
+
+    if (!header) {
+      header = row.map(c => c.replace(/^\uFEFF/, "").trim().toUpperCase());
+      iFecha = header.indexOf(COL_FECHA);
+      iTipo = header.indexOf(COL_TIPO);
+      if (iFecha < 0 || iTipo < 0) {
+        throw new Error("No encontré la columna de fecha o de tipo. Encabezados detectados: " + header.join(" | "));
+      }
+      header.forEach((c, i) => {
+        if (!c.endsWith(" QTY")) return;
+        const rol = rolesGuardados[c] || rolPorDefecto(c);
+        if (rol === "obj") iObj.push(i);
+        else if (rol === "ign") iIgn.push(i);
+        else iCero.push(i);
+      });
+      if (!iObj.length) {
+        throw new Error("Elige al menos una columna como Objetivo.");
+      }
+      $("cols").innerHTML =
+        "<b>Objetivo (" + iObj.length + "):</b> " + iObj.map(i => header[i]).join(", ") +
+        "<br><b>Deben ser 0 (" + iCero.length + "):</b> " + iCero.map(i => header[i]).join(", ") +
+        "<br><b>Ignoradas (" + iIgn.length + "):</b> " + (iIgn.map(i => header[i]).join(", ") || "ninguna") +
+        "<br><b>Columnas que no terminan en QTY (no participan):</b> " +
+        header.filter(c => !c.endsWith(" QTY")).join(", ");
+      return;
+    }
+
+    filas++;
+
+    // Semana: igual que la fórmula de Excel; lo anterior al inicio (o sin fecha válida) es N/A
+    let semana;
+    const t = parseFecha(row[iFecha], fmt);
+    if (t === null) { fechasMalas++; semana = "N/A"; }
+    else {
+      const dias = Math.floor((t - inicio) / DIA);
+      if (dias < 0) { antesDeInicio++; semana = "N/A"; }
+      else semana = Math.floor(dias / 7) + 1;
+    }
+
+    const tipo = (row[iTipo] || "").trim().toUpperCase() || "(VACÍO)";
+    tipos.add(tipo);
+
+    let obj = 0;
+    for (const i of iObj) obj += num(row[i]);
+
+    let hayOtros = false;
+    const conCantidad = [];
+    for (const i of iCero) {
+      const n = num(row[i]);
+      if (n !== 0) { hayOtros = true; conCantidad.push(header[i] + "=" + n); }
+    }
+
+    if (dep !== "" && String(semana) === dep && detalle.length < LIMITE_DETALLE) {
+      detalle.push([
+        filas + 1, row[iFecha], tipo, obj,
+        hayOtros ? "NO" : (obj > 0 ? "SÍ" : "todo en 0"),
+        conCantidad.join(", ")
+      ]);
+    }
+
+    if (!datos.has(semana)) datos.set(semana, new Map());
+    const mt = datos.get(semana);
+    if (!mt.has(tipo)) mt.set(tipo, { to: 0, ceros: 0, filas: 0 });
+    const o = mt.get(tipo);
+    o.filas++;
+    if (!hayOtros) { if (obj > 0) o.to++; else o.ceros++; }
+  }
+
+  $("go").disabled = true;
+  $("estado").textContent = "Procesando...";
+  $("concilia").textContent = "";
+  $("cols").textContent = "";
+  $("salida").innerHTML = "";
+  $("detalle").innerHTML = "";
+
+  try {
+    const reader = file.stream().getReader();
+    const dec = new TextDecoder("utf-8");
+    let delim = null, field = "", row = [], inQ = false, pend = false;
+    let leidos = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      let s = done ? "" : dec.decode(value, { stream: true });
+      if (!done) leidos += value.length;
+
+      if (delim === null && s) delim = detectarDelim(s.split("\n")[0]);
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (pend) {
+          pend = false;
+          if (ch === '"') { field += '"'; continue; }
+          inQ = false;
+        }
+        if (inQ) {
+          if (ch === '"') pend = true; else field += ch;
+          continue;
+        }
+        if (ch === '"') inQ = true;
+        else if (ch === delim) { row.push(field); field = ""; }
+        else if (ch === "\n") { row.push(field); field = ""; emitir(row); row = []; }
+        else if (ch !== "\r") field += ch;
+      }
+
+      $("estado").textContent = "Procesando... " + (leidos / 1048576).toFixed(0) +
+        " MB de " + (file.size / 1048576).toFixed(0) + " MB (" + filas.toLocaleString() + " filas)";
+      if (done) break;
+    }
+    if (field !== "" || row.length) { row.push(field); emitir(row); }
+  } catch (e) {
+    $("estado").textContent = "Error: " + e.message;
+    $("go").disabled = false;
+    return;
+  }
+
+  render();
+
+  if (dep !== "") {
+    let h = "<h3>Filas de la semana " + dep + " (" + detalle.length + ")</h3>" +
+      "<table><tr><th>Fila aprox.</th><th>Fecha</th><th>Tipo</th><th>Suma objetivo</th>" +
+      "<th>¿Tassels only?</th><th>Columnas 'debe ser 0' con cantidad</th></tr>";
+    detalle.forEach(d => h += "<tr>" + d.map(c => "<td>" + c + "</td>").join("") + "</tr>");
+    $("detalle").innerHTML = h + "</table>";
+  }
+
+  $("estado").textContent = "Listo. Filas leídas: " + filas.toLocaleString() +
+    " | En N/A: " + (antesDeInicio + fechasMalas).toLocaleString() +
+    " (anteriores al inicio: " + antesDeInicio.toLocaleString() +
+    ", sin fecha válida: " + fechasMalas.toLocaleString() + ")";
+  $("copiar").disabled = false;
+  $("go").disabled = false;
+}
+
+$("go").onclick = procesar;
+$("incluirCeros").onchange = () => { if (datos.size) render(); };
+$("copiar").onclick = async () => {
+  await navigator.clipboard.writeText(tsv);
+  $("estado").textContent += " | Tabla copiada, pégala en Excel.";
+};
+</script>
+</body>
+</html>
