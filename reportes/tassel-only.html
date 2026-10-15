@@ -10,8 +10,10 @@
 </head>
 <body>
 <!-- Adaptación de CREARR2.html: la lógica de conteo es la misma del original
-     (ver reportes/originales/CREARR2.html). Lo nuevo: diseño, barra de progreso,
-     temporada y botón para guardar el resultado en el dashboard TASSEL ONLY. -->
+     (ver reportes/originales/CREARR2.html) y los campos arrancan con los mismos
+     valores por defecto. Lo nuevo: diseño, barra de progreso, lectura de Excel
+     (.xlsx) además de CSV, avisos de configuración y botón para guardar el
+     resultado en el dashboard TASSEL ONLY. -->
 <div class="rp">
   <header class="rp-head">
     <div>
@@ -23,12 +25,13 @@
   </header>
 
   <section class="card">
-    <h2 class="step-h"><span class="step-n">1</span> Archivo CSV</h2>
+    <h2 class="step-h"><span class="step-n">1</span> Archivo (CSV o Excel)</h2>
     <label class="drop" id="zona">
       <span class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span><strong>Arrastra aquí el CSV o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora; el archivo no se sube a ningún lado.</small></span>
-      <input type="file" id="archivo" accept=".csv">
+      <span><strong>Arrastra aquí el CSV o el Excel (.xlsx) o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora; el archivo no se sube a ningún lado.</small></span>
+      <input type="file" id="archivo" accept=".csv,.xlsx,.xlsm,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12">
     </label>
+    <label class="fld fld-hoja" id="hojaWrap" hidden>Hoja del libro de Excel <select id="hoja"></select></label>
     <div id="config"></div>
   </section>
 
@@ -64,12 +67,14 @@
     </div>
     <div class="progress" id="progreso" hidden><div></div></div>
     <div id="estado"></div>
+    <div id="aviso" class="aviso" role="alert" hidden></div>
   </section>
 
   <section class="card save" id="panelGuardar" hidden></section>
 
   <section class="card" id="resultados" hidden>
     <div class="res-h"><h2>Resultado por semana</h2></div>
+    <p id="usado" class="usado"></p>
     <div id="concilia"></div>
     <div id="cols"></div>
     <div id="salida" class="table-wrap"></div>
@@ -79,6 +84,7 @@
 
 <script src="../js/core/util.js"></script>
 <script src="../js/core/store.js"></script>
+<script src="../js/core/excel-filas.js"></script>
 <script src="../js/registry.js"></script>
 <script src="../js/puente.js"></script>
 <script>
@@ -177,17 +183,25 @@ function construirConfig(columnasQty) {
 $("archivo").onchange = async () => {
   const f = $("archivo").files[0];
   $("config").innerHTML = "";
+  $("hojaWrap").hidden = true;
   if (!f) return;
   try {
-    const txt = await f.slice(0, 300000).text();
-    const primera = txt.split(/\r?\n/)[0].replace(/^﻿/, "");
-    const delim = detectarDelim(primera);
-    const cols = splitLinea(primera, delim).map(c => c.trim().toUpperCase());
+    let cols;
+    if (RH.puente.esExcel(f)) {
+      // Excel: mismo tratamiento que la primera línea del CSV
+      cols = (await RH.puente.prepararExcel(f, $("hoja"), $("hojaWrap"))).map(c => String(c).trim().toUpperCase());
+    } else {
+      const txt = await f.slice(0, 300000).text();
+      const primera = txt.split(/\r?\n/)[0].replace(/^\uFEFF/, "");
+      const delim = detectarDelim(primera);
+      cols = splitLinea(primera, delim).map(c => c.trim().toUpperCase());
+    }
     construirConfig(cols.filter(c => c.endsWith(" QTY")));
   } catch (e) {
     $("estado").textContent = "No pude leer el encabezado: " + e.message;
   }
 };
+$("hoja").onchange = () => $("archivo").onchange();
 
 // ---------- Tabla de resultados ----------
 function render() {
@@ -244,7 +258,7 @@ function render() {
 // ---------- Procesamiento ----------
 async function procesar() {
   const file = $("archivo").files[0];
-  if (!file) { alert("Selecciona el archivo CSV"); return; }
+  if (!file) { alert("Selecciona el archivo CSV o Excel"); return; }
 
   const COL_FECHA = $("colFecha").value.trim().toUpperCase();
   const COL_TIPO = $("colTipo").value.trim().toUpperCase();
@@ -266,7 +280,7 @@ async function procesar() {
     if (row.length === 1 && row[0] === "") return;
 
     if (!header) {
-      header = row.map(c => c.replace(/^﻿/, "").trim().toUpperCase());
+      header = row.map(c => c.replace(/^\uFEFF/, "").trim().toUpperCase());
       iFecha = header.indexOf(COL_FECHA);
       iTipo = header.indexOf(COL_TIPO);
       if (iFecha < 0 || iTipo < 0) {
@@ -342,8 +356,21 @@ async function procesar() {
   $("progreso").firstElementChild.style.width = "0%";
   guardarUI.ocultar();
   ultimo = null;
+  $("aviso").hidden = true;
+  const hoja = RH.puente.esExcel(file) ? $("hoja").value : null;
 
   try {
+    if (RH.puente.esExcel(file)) {
+      // Excel: cada fila llega como arreglo de textos (fechas como AAAA-MM-DD) y pasa por el MISMO emitir()
+      await RH.excelFilas.leer(file, {
+        hoja, columnasFecha: [COL_FECHA], alFila: emitir,
+        alProgreso(leidos, total, etapa) {
+          $("estado").textContent = (etapa === "cadenas" ? "Leyendo textos del Excel... " : "Procesando... ") + (leidos / 1048576).toFixed(0) +
+            " MB de " + (total / 1048576).toFixed(0) + " MB (" + filas.toLocaleString() + " filas)";
+          $("progreso").firstElementChild.style.width = (total ? Math.min(100, leidos / total * 100) : 100).toFixed(1) + "%";
+        }
+      });
+    } else {
     const reader = file.stream().getReader();
     const dec = new TextDecoder("utf-8");
     let delim = null, field = "", row = [], inQ = false, pend = false;
@@ -379,6 +406,7 @@ async function procesar() {
       if (done) break;
     }
     if (field !== "" || row.length) { row.push(field); emitir(row); }
+    }
   } catch (e) {
     $("estado").textContent = "Error: " + e.message;
     $("go").disabled = false;
@@ -407,13 +435,25 @@ async function procesar() {
   // ---------- resultado listo para el dashboard ----------
   ultimo = {
     datos, tipos, inicioIso: $("inicio").value, fmt, colFecha: COL_FECHA, colTipo: COL_TIPO,
-    roles: Object.assign({}, rolesGuardados), archivo: RH.puente.metaArchivo(file),
+    roles: Object.assign({}, rolesGuardados), archivo: RH.puente.metaArchivo(file, hoja),
     filas, fechasMalas, antesDeInicio
   };
   const semanasNum = [...datos.keys()].filter(k => k !== "N/A");
   const ultSem = semanasNum.length ? Math.max(...semanasNum) : 0;
+  const avisos = RH.puente.avisosResultado({ base: filas, antesDeInicio, fechasMalas, maxSemana: ultSem });
+  pintarUsado();
+  $("aviso").hidden = !avisos.length;
+  $("aviso").textContent = avisos.length ? "⚠ " + avisos.join(" ") + " (Lunes usado: " + RH.util.fmtFecha(ultimo.inicioIso) + ")" : "";
   guardarUI.mostrar("Temporada " + ($("temporada").value || "(sin etiqueta)") + " · Semana 1 = " + RH.util.fmtFecha(ultimo.inicioIso) +
     " · " + ultSem + " semanas · " + filas.toLocaleString() + " filas · " + tipos.size + " tipos de asignación.");
+}
+
+// configuración con la que se calculó la tabla que se ve (para comparar con el HTML original)
+function pintarUsado() {
+  if (!ultimo) { $("usado").textContent = ""; return; }
+  $("usado").textContent = "Calculado con: Lunes de la Semana 1 = " + ultimo.inicioIso + " · Formato " + (ultimo.fmt === "MDY" ? "Mes/Día/Año" : "Día/Mes/Año") +
+    " · Incluir filas con todo en 0: " + ($("incluirCeros").checked ? "Sí" : "No") +
+    " · Archivo: " + (ultimo.archivo ? ultimo.archivo.nombre + (ultimo.archivo.hoja ? " (hoja " + ultimo.archivo.hoja + ")" : "") : "");
 }
 
 // ---------- Guardar en el dashboard ----------
@@ -450,16 +490,22 @@ const guardarUI = RH.puente.panelGuardar({
 });
 
 $("go").onclick = procesar;
-$("incluirCeros").onchange = () => { if (datos.size) render(); };
+$("incluirCeros").onchange = () => { if (datos.size) render(); pintarUsado(); };
 $("copiar").onclick = async () => {
   await navigator.clipboard.writeText(tsv);
   $("estado").textContent += " | Tabla copiada, pégala en Excel.";
 };
 
 RH.puente.zonaArchivo($("zona"), $("archivo"), $("archivoInfo"));
-$("inicio").value = RH.util.inicioTemporada(RH.util.temporadaActual());
-RH.puente.recordar("tassel-only", ["fmt", "colFecha", "colTipo"]);
 RH.puente.enlazarTemporada($("inicio"), $("temporada"), $("inicioInfo"));
+// si cambia algo que afecta el cálculo después de procesar, el resultado ya no se puede guardar
+RH.puente.invalidarAlCambiar([$("archivo"), $("hoja"), $("inicio"), $("fmt"), $("colFecha"), $("colTipo"), $("config")], () => {
+  if (!ultimo) return;
+  ultimo = null;
+  guardarUI.ocultar();
+  $("aviso").hidden = false;
+  $("aviso").textContent = "La configuración cambió: pulsa «Procesar» otra vez antes de guardar en el dashboard.";
+});
 RH.puente.actualizarTemporadas({ dataset: "tassel-only", chips: $("temporadas"), temporadaInput: $("temporada"), inicioInput: $("inicio") });
 </script>
 </body>

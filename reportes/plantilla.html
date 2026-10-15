@@ -32,8 +32,8 @@
     <h2 class="step-h"><span class="step-n">1</span> Archivo CSV</h2>
     <label class="drop" id="zona">
       <span class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span><strong>Arrastra aquí el CSV o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora.</small></span>
-      <input type="file" id="archivo" accept=".csv">
+      <span><strong>Arrastra aquí el CSV o el Excel (.xlsx) o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora.</small></span>
+      <input type="file" id="archivo" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
     </label>
   </section>
 
@@ -68,6 +68,7 @@
 
 <script src="../js/core/util.js"></script>
 <script src="../js/core/store.js"></script>
+<script src="../js/core/excel-filas.js"></script>
 <script src="../js/core/csv.js"></script>
 <script src="../js/registry.js"></script>
 <script src="../js/puente.js"></script>
@@ -105,6 +106,7 @@ async function procesar() {
   $('go').disabled = true; $('progreso').hidden = false; guardarUI.ocultar();
   try {
     const r = await RH.csv.leer(file, {
+      columnasFecha: [nombres.fecha],
       alEncabezado(h) {
         for (const [k, n] of Object.entries(nombres)) { idx[k] = h.indexOf(n); if (idx[k] < 0) throw new Error('No encontré la columna ' + n); }
       },
@@ -125,6 +127,8 @@ async function procesar() {
     pintar();
     $('estado').textContent = 'Listo. Filas leídas: ' + r.filas.toLocaleString();
     ultimo = { datos, inicioIso: $('inicio').value, archivo: RH.puente.metaArchivo(file), filas: r.filas, config: { fmt, columnas: nombres } };
+    const avisos = RH.puente.avisosResultado({ base: r.filas, antesDeInicio: (datos.get('N/A') ? [...datos.get('N/A').values()].reduce((a, c) => a + c.filas, 0) : 0), fechasMalas: 0, maxSemana: Math.max(0, ...[...datos.keys()].filter(k => k !== 'N/A')) });
+    if (avisos.length) RH.util.toast(avisos.join(' '), { tipo: 'warn', ms: 9000 });
     guardarUI.mostrar('Temporada ' + ($('temporada').value || '(sin etiqueta)') + ' · ' + r.filas.toLocaleString() + ' filas · ' + tipos.size + ' tipos.');
   } catch (e) { $('estado').textContent = 'Error: ' + e.message; }
   $('go').disabled = false;
@@ -157,7 +161,6 @@ const guardarUI = RH.puente.panelGuardar({
 
 $('go').onclick = procesar;
 $('copiar').onclick = async () => { await RH.util.copiarTexto(tsv); RH.util.toast('Tabla copiada.', { tipo: 'ok' }); };
-$('inicio').value = RH.util.inicioTemporada(RH.util.temporadaActual());
 RH.puente.zonaArchivo($('zona'), $('archivo'), $('archivoInfo'));
 RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
 RH.puente.actualizarTemporadas({ dataset: DATASET, chips: $('temporadas'), temporadaInput: $('temporada'), inicioInput: $('inicio') });

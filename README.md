@@ -17,7 +17,8 @@ reportes de siempre y muestra tres dashboards — **TASSEL ONLY**, **GOWNS** y
 |---|---|
 | **Panorama general** | Pantalla de inicio: semana actual de la temporada, resumen de cada dashboard con tendencia, última semana completa y actividad reciente. |
 | **Dashboards** | KPIs, comparativo semanal (o acumulado), variación vs la temporada anterior, desglose por tipo de asignación, participación, mezcla por tipo, mapa de calor, detalle semanal y una «lectura rápida» con hallazgos automáticos. |
-| **Reportes** | `Tassels Only por semana` (antes `CREARR2.html`) y `Homeship menos Tassels Only` (antes `filtro_menos_tassels.html`). Hacen exactamente los mismos cálculos que los originales y además guardan el resultado en su dashboard. |
+| **Reportes** | `Tassels Only por semana` (antes `CREARR2.html`) y `Homeship menos Tassels Only` (antes `filtro_menos_tassels.html`). Hacen exactamente los mismos cálculos que los originales, arrancan con los mismos valores por defecto, aceptan **CSV o Excel (.xlsx)** y además guardan el resultado en su dashboard. |
+| **Tabla del reporte** | Al final de cada dashboard: la misma tabla del HTML (mismas columnas, fila N/A y TOTAL) reconstruida desde la temporada guardada, con su botón para copiar a Excel. Sirve para conciliar celda por celda. |
 | **Base de datos** | Temporadas guardadas, Excel vinculado, exportar/importar y base compartida del equipo. |
 
 Los archivos originales se conservan sin cambios en `reportes/originales/`.
@@ -30,8 +31,18 @@ Los archivos originales se conservan sin cambios en `reportes/originales/`.
 - **Tipo de asignación**: uno, varios o todos.
 - La casilla «incluir filas con todo en 0» de los reportes también está como interruptor.
 
-Los totales comparan siempre **las mismas semanas** en ambas temporadas. Si la
-última semana todavía estaba en curso cuando se exportó el CSV, se marca con `*`.
+Los totales comparan siempre **las mismas semanas** en ambas temporadas (la tarjeta
+de la temporada anterior muestra también su total completo). Si la última semana
+todavía estaba en curso cuando se exportó el CSV, se marca con `*`.
+
+**Cómo cuadrar el dashboard con el HTML.** Los KPIs y gráficas cuentan las semanas
+1…N. La fila **N/A** del HTML (filas anteriores al lunes de la semana 1 o sin fecha
+legible) no pertenece a ninguna semana, por eso no está en las gráficas, pero el
+**TOTAL** del HTML sí la incluye. La «Tabla del reporte» muestra la tabla completa,
+idéntica a la del HTML. Cada temporada se calcula con la opción «incluir filas con
+todo en 0» con la que se procesó; si las dos temporadas difieren aparece un aviso y
+el interruptor permite igualarlas. Los filtros duran solo mientras la app está
+abierta y el botón «Restablecer filtros» los regresa a su estado inicial.
 
 ### Llevar resultados a Excel
 
@@ -47,10 +58,18 @@ Los totales comparan siempre **las mismas semanas** en ambas temporadas. Si la
 ## Uso semanal
 
 1. Abre **Reportes → Tassels Only por semana** (o Homeship).
-2. Elige el CSV. El **lunes de la semana 1** se sugiere con el de la temporada actual
-   y la **temporada** se toma de su año (puedes cambiarla).
-3. **Procesar** → aparece la tabla de siempre (con su botón para copiar a Excel).
-4. **Guardar en el dashboard**. Si la temporada ya existía, se reemplaza por la nueva versión.
+2. Elige el **CSV o el Excel (.xlsx)**; si el libro tiene varias hojas, elige la hoja.
+   Revisa el **lunes de la semana 1**: arranca en el mismo valor que el HTML original
+   (2025-06-30); cámbialo para otra temporada o usa uno de los botones de
+   «Temporadas ya guardadas». La **temporada** se toma del año de ese lunes.
+3. **Procesar** → aparece la tabla de siempre (con su botón para copiar a Excel). Si
+   muchas filas quedan antes del lunes de inicio o hay semanas imposibles, aparece un
+   aviso: casi siempre significa que el lunes de inicio no corresponde al archivo.
+4. **Guardar en el dashboard**. Si la temporada ya existía, se reemplaza por la nueva
+   versión. Si cambias algo después de procesar, hay que volver a procesar.
+
+En archivos de Excel las fechas se leen como fechas reales (no dependen del formato
+Mes/Día o Día/Mes). Los .xls antiguos se deben guardar como .xlsx o CSV.
 
 La temporada del año pasado se procesa **una sola vez**: queda guardada y ya no hay
 que volver a cargarla. En «Temporadas ya guardadas» puedes hacer clic en una para
@@ -67,14 +86,42 @@ Además hay tres formas de usar un Excel como base:
    genera `REPORT_DB.xlsx` con las hojas `Temporadas`, `Datos` (formato largo, ideal
    para tablas dinámicas) y `Campos`. Se importa con *Importar desde Excel*.
 2. **Excel vinculado** (Chrome o Edge en computadora): *Crear Excel nuevo* o
-   *Vincular un Excel existente*. La app lo lee al abrir y lo reescribe cada vez que
-   se guarda una temporada. Si el archivo está en una carpeta de **OneDrive,
-   SharePoint o Teams**, todo el equipo comparte la misma base. Si alguien edita
-   un valor en el Excel, la app lo toma en la siguiente sincronización.
+   *Vincular un Excel existente*. La app lo lee al abrir, lo revisa cada 20 segundos
+   mientras está abierta y lo reescribe cada vez que se guarda una temporada. Si el
+   archivo está en una carpeta de **OneDrive, SharePoint o Teams**, todo el equipo
+   comparte la misma base. Si alguien edita un valor en el Excel, la app lo toma en la
+   siguiente sincronización. Por cada temporada gana la versión más reciente; los
+   borrados quedan registrados en la hoja `Borrados`, así que si dos personas guardan
+   al mismo tiempo no se pierde la temporada de ninguna.
 3. **Base compartida publicada**: si existe `data/REPORT_DB.xlsx` junto a la app,
    cada persona recibe esas temporadas automáticamente al abrirla (ver `data/LEEME.md`).
 
 ---
+
+## Usarla desde una carpeta compartida de OneDrive
+
+Funciona: copia la carpeta del proyecto a OneDrive/SharePoint y cada persona abre
+`index.html` con Chrome o Edge. Ten en cuenta:
+
+- Abierta como archivo **no es instalable ni funciona sin conexión** (eso requiere
+  publicarla en un sitio `https://`, ver abajo); todo lo demás funciona igual.
+- OneDrive comparte **los archivos**, no la memoria de cada navegador: cada persona
+  guarda sus temporadas en su propia computadora. Para compartirlas, vincula en
+  *Base de datos* el mismo `REPORT_DB.xlsx` dentro de esa carpeta (cada persona lo
+  vincula una vez).
+- Los cambios de otra persona **no llegan al instante como con un servidor**: llegan
+  cuando OneDrive sincroniza el archivo (normalmente segundos o pocos minutos) y la app
+  lo detecta (revisa cada 20 s). Si alguien tiene el Excel abierto en Excel, la app
+  espera y reintenta.
+
+**¿Y SQLite?** No cambia lo anterior: SQLite en el navegador sería otra copia local
+por persona y, puesto como archivo en OneDrive, OneDrive lo sincroniza por archivo
+completo (sin bloqueos entre computadoras), con riesgo de copias en conflicto o de
+dañar la base. Para ver cambios al instante, como un servidor, hace falta un servidor
+o una base en la nube: por ejemplo un servicio pequeño (Node + SQLite/PostgreSQL) en
+un equipo de la empresa, o una lista de SharePoint vía Microsoft Graph. La app ya
+separa los datos (`js/core/store.js`), así que se puede conectar a cualquiera de esas
+opciones sin rehacer los dashboards.
 
 ## Publicar para el equipo (GitHub Pages)
 
@@ -157,7 +204,8 @@ css/                     tokens de diseño (claro/oscuro) y estilos
 js/registry.js           ← registro de reportes y dashboards
 js/app.js                arranque, navegación, tema, PWA
 js/puente.js             conexión reporte ⇄ dashboard (guardar temporada)
-js/core/                 util, almacenamiento (IndexedDB), CSV, modelo,
+js/core/                 util, almacenamiento (IndexedDB), CSV, lector de Excel por
+                         streaming (excel-filas.js), tabla del reporte (tablas.js), modelo,
                          ZIP + XLSX (lectura/escritura con gráficas nativas),
                          Excel como base de datos, datos de demostración
 js/ui/                   gráficas, dashboard, panorama, base de datos, guía
@@ -170,7 +218,10 @@ icons/                   íconos de la app
 ### Fidelidad con los reportes originales
 
 Las páginas de `reportes/` conservan la misma lógica de lectura y conteo que los
-originales. Se verificó con CSV de prueba (comillas, saltos de línea dentro de
-celdas, filas sin fecha, tipos vacíos, valores con comas) que la tabla copiada a
-Excel, los totales y el detalle sean idénticos a los de `reportes/originales/`,
-con y sin la casilla de «filas con todo en 0».
+originales y arrancan con los mismos valores por defecto (no recuerdan valores de
+sesiones anteriores). Se verificó con CSV de prueba (comillas, saltos de línea dentro
+de celdas, filas sin fecha, tipos vacíos, valores con comas) y con los mismos datos en
+Excel (.xlsx), que la tabla copiada a Excel, los totales y el detalle sean idénticos a
+los de `reportes/originales/`, con y sin la casilla de «filas con todo en 0», tanto
+fijando la configuración como dejando los valores por defecto. También se verificó
+que la «Tabla del reporte» del dashboard, reconstruida desde lo guardado, sea idéntica.

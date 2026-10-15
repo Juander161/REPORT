@@ -14,13 +14,13 @@
     <section class="card span-6 guide">
       <h3 class="card-t">1 · Actualizar los datos cada semana</h3>
       <ol>
-        <li>Exporta el CSV de órdenes como siempre.</li>
+        <li>Exporta el archivo de órdenes como siempre: <strong>CSV o Excel (.xlsx)</strong>.</li>
         <li>Abre <strong>Reportes</strong> en el menú y elige el reporte (por ejemplo «Tassels Only por semana»).</li>
-        <li>Selecciona el CSV, revisa el <strong>lunes de la semana 1</strong> y la <strong>temporada</strong> (por ejemplo, 2026).</li>
+        <li>Selecciona el archivo (si es un Excel con varias hojas, elige la hoja), revisa el <strong>lunes de la semana 1</strong> — arranca igual que en el HTML original — y la <strong>temporada</strong> (por ejemplo, 2026).</li>
         <li>Pulsa <strong>Procesar</strong>: obtienes la misma tabla de siempre, que puedes copiar a Excel.</li>
         <li>Pulsa <strong>Guardar en el dashboard</strong>. Si ya existía esa temporada se reemplaza por la versión nueva.</li>
       </ol>
-      <p class="muted">La temporada del año pasado se procesa <strong>una sola vez</strong>: queda guardada y no hay que volver a cargarla.</p>
+      <p class="muted">La temporada del año pasado se procesa <strong>una sola vez</strong>: queda guardada y no hay que volver a cargarla. Si aparece un aviso amarillo al procesar, revisa el lunes de inicio: casi siempre es de otra temporada.</p>
     </section>
 
     <section class="card span-6 guide">
@@ -31,6 +31,8 @@
         <li><strong>Métrica:</strong> cambia entre conteos y porcentajes (por ejemplo, % de Tassels Only sobre el total).</li>
         <li><strong>Tipo de asignación:</strong> filtra uno o varios tipos; todas las gráficas y KPIs se recalculan.</li>
         <li>Los totales comparan siempre <strong>las mismas semanas</strong> en ambas temporadas. Una semana marcada con <strong>*</strong> todavía estaba en curso cuando se exportó el CSV.</li>
+        <li><strong>Cuadrar con el HTML:</strong> las gráficas suman las semanas 1…N; la fila <strong>N/A</strong> (filas antes del lunes de inicio o sin fecha) solo está en el TOTAL. La sección <strong>«Tabla del reporte»</strong>, al final del dashboard, muestra la tabla idéntica a la del HTML y se copia igual a Excel.</li>
+        <li>Los filtros duran mientras la app está abierta; «Restablecer filtros» los regresa al inicio.</li>
       </ul>
     </section>
 
@@ -47,7 +49,7 @@
       <h3 class="card-t">4 · Excel como base de datos</h3>
       <ul>
         <li>Todo se guarda en esta computadora automáticamente.</li>
-        <li><strong>Excel vinculado</strong> (Chrome o Edge): la app escribe en un <code>REPORT_DB.xlsx</code>. Ponlo en OneDrive/SharePoint/Teams y el equipo comparte la base.</li>
+        <li><strong>Excel vinculado</strong> (Chrome o Edge): la app escribe en un <code>REPORT_DB.xlsx</code> y lo revisa cada 20 segundos. Ponlo en OneDrive/SharePoint/Teams y el equipo comparte la base; los cambios de otra persona llegan cuando OneDrive sincroniza el archivo (no al instante como un servidor).</li>
         <li><strong>Base compartida:</strong> publicando <code>data/REPORT_DB.xlsx</code> junto a la app, cada persona recibe esas temporadas al abrirla.</li>
         <li>La hoja «Datos» está en formato largo: ideal para tablas dinámicas.</li>
       </ul>

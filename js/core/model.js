@@ -5,14 +5,24 @@
   'use strict';
   const u = RH.util;
 
+  // Una temporada nunca pasa de ~53 semanas: semanas mayores vienen de fechas mal
+  // capturadas (p. ej. año 2062). Se conservan en los datos y en la "Tabla del reporte",
+  // pero no extienden las gráficas ni las comparaciones.
+  const MAX_SEMANA = 60;
+
   const M = {
+    MAX_SEMANA,
     semanasDe(snap) {
       if (!snap) return [];
       return Object.keys(snap.weeks || {}).map(Number).filter(n => isFinite(n)).sort((a, b) => a - b);
     },
     ultimaSemana(snap) {
-      const s = M.semanasDe(snap);
+      const s = M.semanasDe(snap).filter(w => w <= MAX_SEMANA);
       return s.length ? s[s.length - 1] : 0;
+    },
+    /** Semanas guardadas fuera de rango (> MAX_SEMANA) */
+    semanasFuera(snap) {
+      return M.semanasDe(snap).filter(w => w > MAX_SEMANA);
     },
 
     /** Temporadas de un dataset ordenadas de la más reciente a la más antigua */

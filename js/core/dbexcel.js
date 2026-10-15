@@ -13,10 +13,10 @@
   const RUTA_COMPARTIDA = 'data/REPORT_DB.xlsx';
   const NOMBRE = 'REPORT_DB.xlsx';
 
-  const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+  const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
   // ---------------------------------------------------------------- snapshots -> libro
-  async function aLibro(snaps) {
+  async function aLibro(snaps, tumbas) {
     const X = RH.xlsx;
     const wb = X.libro({ titulo: 'Report Hub · Base de datos' });
     const reg = RH.registro;
@@ -32,6 +32,7 @@
       ['Temporadas', 'Una fila por reporte procesado (dataset + temporada): lunes de la semana 1, archivo de origen, fecha de proceso y configuración usada.'],
       ['Datos', 'Formato largo, ideal para tablas dinámicas: una fila por dataset, temporada, semana, tipo y campo. Puedes corregir un valor aquí y la app lo tomará.'],
       ['Campos', 'Significado de cada campo por dataset.'],
+      ['Borrados', 'Temporadas eliminadas a propósito, con la fecha del borrado, para que también se eliminen en las demás computadoras.'],
       ['Compartir', 'Publica este archivo como data/REPORT_DB.xlsx junto a la app para que todo el equipo vea estas temporadas sin cargar nada, o vincúlalo desde una carpeta de OneDrive/SharePoint.']
     ].forEach(([t, d]) => { L.fila([null, t], { estilo: 'seccion' }); L.fila([null, d], { estilo: 'normal' }); L.vacia(); });
 
@@ -80,11 +81,19 @@
     Cm.fila(['Dataset', 'Campo', 'Descripción'], { estilo: 'header', alto: 22 });
     for (const d of reg.dashboards) for (const [k, v] of Object.entries(d.campos || {})) Cm.fila([{ v: d.dataset, s: 'texto' }, { v: k, s: 'texto' }, { v: v, s: 'texto' }]);
 
+    const B = wb.hoja('Borrados', { tab: '9AA3B2' });
+    B.ancho([30, 28]);
+    B.fila(['ID', 'Borrado'], { estilo: 'header', alto: 22 });
+    Object.keys(tumbas || {}).sort().forEach(id => B.fila([{ v: id, s: 'texto' }, { v: tumbas[id], s: 'texto' }]));
+
     return wb.blob();
   }
 
   // ---------------------------------------------------------------- libro -> snapshots
-  async function deLibro(buffer) {
+  async function deLibro(buffer) { return (await leerBase(buffer)).snaps; }
+
+  /** Lee la base completa: { snaps, tumbas: {id: fechaDeBorrado} } */
+  async function leerBase(buffer) {
     const { hojas, nombres } = await RH.xlsx.leer(buffer);
     const buscarHoja = n => { const k = nombres.find(x => norm(x) === norm(n)); return k ? hojas[k] : null; };
     const T = buscarHoja('Temporadas'), D = buscarHoja('Datos');
@@ -108,6 +117,7 @@
         meta, updatedAt: String(f[iT('Actualizado')] || meta.procesado || new Date(0).toISOString())
       });
     }
+    let duplicados = 0;
     const cab = D[0] || [];
     const ix = { ds: idx(cab, 'Dataset'), t: idx(cab, 'Temporada'), w: idx(cab, 'Semana'), tipo: idx(cab, 'Tipo'), campo: idx(cab, 'Campo'), v: idx(cab, 'Valor') };
     if (Object.values(ix).some(i => i < 0)) throw new Error('La hoja «Datos» no tiene los encabezados esperados.');
@@ -129,14 +139,27 @@
         bloque = s.weeks[wn] || (s.weeks[wn] = {});
       }
       const celda = bloque[tipo] || (bloque[tipo] = {});
-      celda[campo] = (celda[campo] || 0) + val;
+      if (campo in celda) duplicados++;
+      celda[campo] = val;   // si alguien duplicó una fila a mano, no se suma dos veces
     }
     for (const s of snaps.values()) {
       const tipos = new Set();
       Object.values(s.weeks).forEach(b => Object.keys(b).forEach(t => tipos.add(t)));
       s.types = [...tipos].sort();
     }
-    return [...snaps.values()];
+    const tumbas = {};
+    const B = buscarHoja('Borrados');
+    if (B && B.length) {
+      const cb = (B[0] || []).map(norm);
+      const iId = cb.indexOf('id'), iB = cb.indexOf('borrado');
+      if (iId >= 0 && iB >= 0) {
+        for (let r = 1; r < B.length; r++) {
+          const f = B[r] || [];
+          if (f[iId] && f[iB]) tumbas[String(f[iId])] = String(f[iB]);
+        }
+      }
+    }
+    return { snaps: [...snaps.values()], tumbas, duplicados };
   }
 
   function fechaIso(v) {
@@ -149,44 +172,94 @@
   }
 
   // ---------------------------------------------------------------- fusión
-  async function fusionar(entrantes, opts) {
-    opts = opts || {};
-    const tumbas = await store.ajuste('tombstones', {});
-    const locales = new Map((await store.snapshots()).map(s => [s.id, s]));
-    const guardar = [];
-    let nuevos = 0, actualizados = 0, iguales = 0, omitidos = 0;
-    for (const s of entrantes) {
-      s.meta = Object.assign({}, s.meta, { origen: opts.origen || 'excel' });
-      const loc = locales.get(s.id);
-      if (!loc || loc.demo) {
-        if (opts.respetarBorrados && tumbas[s.id] && tumbas[s.id] >= s.updatedAt) { omitidos++; continue; }
-        guardar.push(s); nuevos++;
-      } else if (opts.forzar || s.updatedAt > loc.updatedAt) {
-        guardar.push(s); actualizados++;
-      } else iguales++;
+  /** JSON con llaves ordenadas: dos snapshots iguales dan la misma firma sin importar el orden de origen */
+  function estable(v) {
+    if (Array.isArray(v)) return '[' + v.map(estable).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + estable(v[k])).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  /** Firma del contenido (sin fechas): detecta ediciones hechas a mano en el Excel */
+  function firma(snaps) {
+    return estable(snaps.filter(s => !s.demo).sort((a, b) => a.id.localeCompare(b.id))
+      .map(s => [s.id, s.week1 || '', s.weeks || {}, s.na || null]));
+  }
+  /** Firma completa (contenido + fecha de actualización): decide si hay que reescribir el archivo */
+  function firmaCompleta(snaps) {
+    return estable(snaps.filter(s => !s.demo).sort((a, b) => a.id.localeCompare(b.id))
+      .map(s => [s.id, s.week1 || '', s.weeks || {}, s.na || null, s.updatedAt || '']));
+  }
+
+  /**
+   * Fusión "gana el último cambio" por temporada, con borrados ("tumbas") fechados:
+   * - entre la versión local y la entrante gana la de fecha de actualización más reciente;
+   * - con la misma fecha pero distinto contenido gana la entrante (alguien la corrigió en el Excel);
+   * - un borrado gana si es posterior a la última actualización de esa temporada.
+   * Nunca se borra algo solo porque falte en el archivo: así dos personas que guardan
+   * a la vez no se pisan (la temporada de cada una sobrevive y se vuelve a escribir).
+   */
+  function resolver(locales, tumbasLoc, entrantes, tumbasEnt) {
+    const ids = new Set([...locales.keys(), ...entrantes.keys(), ...Object.keys(tumbasLoc), ...Object.keys(tumbasEnt)]);
+    const final = new Map(), tumbas = {};
+    for (const id of ids) {
+      const L = locales.get(id), E = entrantes.get(id);
+      const tl = tumbasLoc[id] || '', te = tumbasEnt[id] || '';
+      const t = tl > te ? tl : te;
+      let mejor;
+      if (L && E) mejor = E.updatedAt > L.updatedAt ? E : L.updatedAt > E.updatedAt ? L : (firma([L]) !== firma([E]) ? E : L);
+      else mejor = L || E || null;
+      if (t && (!mejor || t >= (mejor.updatedAt || ''))) tumbas[id] = t;
+      else if (mejor) final.set(id, mejor);
     }
-    if (guardar.length) await store.guardar(guardar, { origen: opts.origen || 'excel' });
-    return { nuevos, actualizados, iguales, omitidos, total: entrantes.length };
+    return { final, tumbas };
+  }
+
+  /** Aplica en esta computadora el resultado de fusionar una base entrante */
+  async function fusionarBase(base, origen) {
+    const locales = new Map((await store.snapshots()).filter(s => !s.demo).map(s => [s.id, s]));
+    const tumbasLoc = await store.ajuste('tombstones', {});
+    const entrantes = new Map((base.snaps || []).map(s => [s.id, s]));
+    const { final, tumbas } = resolver(locales, tumbasLoc, entrantes, base.tumbas || {});
+    const guardar = [], borrar = [], otraConfig = [];
+    let nuevos = 0, actualizados = 0, iguales = 0;
+    const cfg = s => estable([s.week1 || '', (s.meta && s.meta.config) || {}]);
+    for (const [id, s] of final) {
+      const L = locales.get(id);
+      if (s === L) { if (entrantes.has(id)) iguales++; continue; }
+      if (L && cfg(L) !== cfg(s)) otraConfig.push(s.season + ' (' + s.dataset + ')');
+      s.meta = Object.assign({}, s.meta, { origen: origen === 'sync' ? 'excel' : origen });
+      guardar.push(s);
+      if (L) actualizados++; else nuevos++;
+    }
+    for (const id of locales.keys()) if (!final.has(id)) borrar.push(id);
+    if (guardar.length) await store.guardar(guardar, { origen });
+    if (borrar.length) await store.borrar(borrar, { origen, tumbas });
+    await store.fijar('tombstones', tumbas);
+    return { nuevos, actualizados, iguales, borrados: borrar.length, total: entrantes.size, otraConfig };
+  }
+
+  /** Compatibilidad: fusiona una lista de temporadas sin borrados */
+  async function fusionar(entrantes, opts) {
+    return fusionarBase({ snaps: entrantes, tumbas: {} }, (opts && opts.origen) || 'excel');
   }
 
   // ---------------------------------------------------------------- exportar / importar manual
   async function exportar() {
     const snaps = (await store.snapshots()).filter(s => !s.demo);
     if (!snaps.length) { u.toast('Todavía no hay temporadas guardadas para exportar.', { tipo: 'warn' }); return; }
-    const blob = await aLibro(snaps);
+    const blob = await aLibro(snaps, await store.ajuste('tombstones', {}));
     u.descargar(blob, NOMBRE);
     u.toast('Base exportada como ' + NOMBRE + ' (' + snaps.length + ' temporadas).', { tipo: 'ok' });
   }
 
   async function importar(file) {
-    const snaps = await deLibro(await file.arrayBuffer());
-    if (!snaps.length) throw new Error('El archivo no contiene temporadas.');
-    return fusionar(snaps, { origen: 'excel' });
+    const base = await leerBase(await file.arrayBuffer());
+    if (!base.snaps.length && !Object.keys(base.tumbas).length) throw new Error('El archivo no contiene temporadas.');
+    return fusionarBase(base, 'excel');
   }
 
   // ---------------------------------------------------------------- base compartida (servidor)
-  async function cargarCompartida(opts) {
-    opts = opts || {};
+  async function cargarCompartida() {
+    if (location.protocol === 'file:') return { estado: 'no-disponible' };
     let res;
     try { res = await fetch(RUTA_COMPARTIDA, { cache: 'no-cache' }); }
     catch (e) { return { estado: 'sin-conexion' }; }
@@ -197,11 +270,10 @@
     const tipo = res.headers.get('content-type') || '';
     if (tipo.includes('text/html')) return { estado: 'ausente' };
     try {
-      const buf = await res.arrayBuffer();
-      const snaps = await deLibro(buf);
-      const r = await fusionar(snaps, { origen: 'compartida', respetarBorrados: !opts.forzar, forzar: false });
+      const base = await leerBase(await res.arrayBuffer());
+      const r = await fusionarBase(base, 'compartida');
       await store.fijar('compartida', {
-        estado: 'ok', revisado: new Date().toISOString(), temporadas: snaps.map(s => s.id),
+        estado: 'ok', revisado: new Date().toISOString(), temporadas: base.snaps.map(s => s.id),
         modificado: res.headers.get('last-modified') || null
       });
       return Object.assign({ estado: 'ok' }, r);
@@ -227,6 +299,7 @@
     await store.fijar('excelVinculado', h);
     await store.fijar('excelSync', 0);
     vinc.nombre = h.name;
+    iniciarSondeo();
     return sincronizar({ interactivo: true });
   }
 
@@ -235,17 +308,6 @@
     await store.fijar('excelSync', 0);
     Object.assign(vinc, { estado: soportaVinculo ? 'sin-vincular' : 'no-soportado', nombre: null, ultimo: null, error: null });
     avisarVinc();
-  }
-
-  /** JSON con llaves ordenadas: dos snapshots iguales dan la misma firma sin importar el orden de origen */
-  function estable(v) {
-    if (Array.isArray(v)) return '[' + v.map(estable).join(',') + ']';
-    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + estable(v[k])).join(',') + '}';
-    return JSON.stringify(v === undefined ? null : v);
-  }
-  function firma(snaps) {
-    return estable(snaps.filter(s => !s.demo).sort((a, b) => a.id.localeCompare(b.id))
-      .map(s => [s.id, s.week1 || '', s.weeks || {}, s.na || null]));
   }
 
   let enCurso = null;
@@ -266,51 +328,35 @@
     vinc.ocupado = true; vinc.estado = 'sincronizando'; avisarVinc();
     try {
       const archivo = await h.getFile();
-      const ultimoSync = (await store.ajuste('excelSync', 0)) || 0;
-      let deArchivo = [];
+      let base = { snaps: [], tumbas: {} };
       if (archivo.size > 0) {
-        try { deArchivo = await deLibro(await archivo.arrayBuffer()); }
+        try { base = await leerBase(await archivo.arrayBuffer()); }
         catch (e) { throw new Error('«' + h.name + '» no tiene el formato de la base de Report Hub. Elige otro archivo o crea uno nuevo.'); }
       }
-      let importados = 0, borrados = 0;
-      if (archivo.size > 0 && archivo.lastModified > ultimoSync) {
-        // el archivo cambió fuera de esta app (otra persona, OneDrive o edición manual)
-        const corte = new Date(ultimoSync).toISOString();
-        const locales = new Map((await store.snapshots()).filter(s => !s.demo).map(s => [s.id, s]));
-        const traer = [];
-        for (const s of deArchivo) {
-          const loc = locales.get(s.id);
-          const localNuevo = loc && loc.updatedAt > corte && loc.updatedAt > s.updatedAt;
-          if (!localNuevo && (!loc || firma([loc]) !== firma([s]) || loc.updatedAt !== s.updatedAt)) {
-            s.meta = Object.assign({}, s.meta, { origen: 'excel' });
-            traer.push(s);
-          }
-        }
-        if (traer.length) { await store.guardar(traer, { origen: 'sync' }); importados = traer.length; }
-        if (ultimoSync > 0) {
-          const ids = new Set(deArchivo.map(s => s.id));
-          const quitar = [...locales.values()].filter(l => !ids.has(l.id) && l.updatedAt <= corte).map(l => l.id);
-          if (quitar.length) { await store.borrar(quitar, { origen: 'sync' }); borrados = quitar.length; }
-        }
-      }
+      // 1) traer lo que otras personas (u OneDrive) cambiaron en el archivo
+      const r = await fusionarBase(base, 'sync');
+      // 2) escribir el archivo si esta computadora tiene algo que el archivo no
       const actuales = (await store.snapshots()).filter(s => !s.demo);
+      const tumbas = await store.ajuste('tombstones', {});
       let escrito = false;
-      if (firma(actuales) !== firma(deArchivo) || archivo.size === 0) {
-        const blob = await aLibro(actuales);
+      if (archivo.size === 0 || firmaCompleta(actuales) !== firmaCompleta(base.snaps) || estable(tumbas) !== estable(base.tumbas)) {
+        const blob = await aLibro(actuales, tumbas);
         try {
           const w = await h.createWritable();
           await w.write(blob);
           await w.close();
           escrito = true;
         } catch (e) {
-          throw new Error('No se pudo guardar en «' + h.name + '». Si está abierto en Excel, ciérralo; se reintentará en el próximo cambio.');
+          throw new Error('No se pudo guardar en «' + h.name + '». Si está abierto en Excel, ciérralo; se reintentará solo.');
         }
       }
       const fin = await h.getFile();
       await store.fijar('excelSync', fin.lastModified);
       Object.assign(vinc, { estado: 'ok', ultimo: Date.now(), error: null, ocupado: false });
       avisarVinc();
-      return { estado: 'ok', importados, borrados, escrito };
+      const cambios = r.nuevos + r.actualizados + r.borrados;
+      if (cambios && !interactivo) window.dispatchEvent(new CustomEvent('rh-sync-cambios', { detail: { nombre: h.name, nuevos: r.nuevos, actualizados: r.actualizados, borrados: r.borrados, otraConfig: r.otraConfig } }));
+      return { estado: 'ok', importados: r.nuevos + r.actualizados, borrados: r.borrados, escrito };
     } catch (e) {
       Object.assign(vinc, { estado: 'error', error: e.message, ocupado: false });
       avisarVinc();
@@ -318,17 +364,35 @@
     }
   }
 
+  /** Revisa cada 20 s (con la app visible) si el Excel cambió, por ejemplo porque OneDrive
+      trajo lo que guardó otra persona; si cambió, sincroniza. */
+  let sondeo = null;
+  function iniciarSondeo() {
+    if (sondeo || !soportaVinculo) return;
+    sondeo = setInterval(async () => {
+      if (document.visibilityState !== 'visible' || enCurso || !vinc.nombre || vinc.estado === 'permiso') return;
+      try {
+        const h = await manejador();
+        if (!h || (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') return;
+        const f = await h.getFile();
+        const visto = await store.ajuste('excelSync', 0);
+        if (f.lastModified !== visto || vinc.estado === 'error') sincronizar({ interactivo: false });
+      } catch (e) { /* archivo no disponible por ahora */ }
+    }, 20000);
+  }
+
   async function iniciarVinculo() {
     if (!soportaVinculo) { avisarVinc(); return; }
     const h = await manejador();
     if (!h) { vinc.estado = 'sin-vincular'; avisarVinc(); return; }
     vinc.nombre = h.name;
+    iniciarSondeo();
     return sincronizar({ interactivo: false });
   }
 
   RH.dbx = {
     RUTA_COMPARTIDA, NOMBRE, soportaVinculo,
-    aLibro, deLibro, fusionar, exportar, importar, cargarCompartida,
+    aLibro, deLibro, leerBase, resolver, fusionar, fusionarBase, exportar, importar, cargarCompartida,
     vincular, desvincular, sincronizar, iniciarVinculo,
     get vinculo() { return Object.assign({}, vinc); }
   };
