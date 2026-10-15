@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Filtro por palabra menos Tassels Only</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 24px; }
+  label { display: inline-block; margin: 6px 16px 6px 0; }
+  input, select, button { padding: 4px; }
+  table { border-collapse: collapse; margin-top: 16px; }
+  th, td { border: 1px solid #999; padding: 4px 10px; text-align: right; }
+  th { background: #ffff00; }
+  td:first-child, td:nth-child(2) { text-align: left; }
+  tr.total td { font-weight: bold; background: #e8e8e8; }
+  #estado, #concilia, #cols { margin-top: 12px; color: #444; }
+  #concilia { font-weight: bold; }
+  #cols { font-size: 13px; line-height: 1.5; }
+  #detalle td { text-align: left; }
+  fieldset { border: 1px solid #999; padding: 8px 12px; margin: 10px 0; }
+  #config .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 4px 16px; }
+  #config .item { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #config .item.obj { background: #e6f4ea; }
+  #config .item.ign { background: #eee; color: #777; }
+  #config .item span { font-size: 13px; }
+</style>
+</head>
+<body>
+<h2>Filtro por palabra menos Tassels Only</h2>
+
+<label>Archivo CSV: <input type="file" id="archivo" accept=".csv"></label><br>
+
+<fieldset>
+  <legend><b>Filtro principal</b></legend>
+  <label>Columna a filtrar: <select id="colFiltro"><option value="SERVICE ORDER TYPE">SERVICE ORDER TYPE</option></select></label>
+  <label>Contiene la palabra: <input id="palabra" value="HOMESHIP"></label>
+  <span style="font-size:13px;color:#555">(no distingue mayúsculas; encuentra la palabra en cualquier parte del texto, por ejemplo X_HOMESHIP_Y)</span>
+</fieldset>
+
+<div id="config"></div>
+
+<label>Columna de fecha: <input id="colFecha" value="IMPORTED"></label>
+<label>Columna de tipo: <input id="colTipo" value="ASSIGNMENT TYPE"></label>
+<label>Columna de orden (opcional, para el listado): <input id="colOrden" value="ORACLE ORDER NUMBER"></label><br>
+<label>Lunes de la Semana 1: <input type="date" id="inicio" value="2025-06-30"></label>
+<label>Formato de fecha:
+  <select id="fmt">
+    <option value="MDY">Mes/Día/Año (11/10/2025 = 10 nov)</option>
+    <option value="DMY">Día/Mes/Año (11/10/2025 = 11 oct)</option>
+  </select>
+</label><br>
+<label><input type="checkbox" id="incluirCeros"> Contar como Tassels Only también las filas con todas las columnas objetivo en 0 (solo las demás en 0)</label><br>
+<button id="go">Procesar</button>
+<button id="copiar" disabled>Copiar tabla (para pegar en Excel)</button>
+
+<div id="estado"></div>
+<div id="concilia"></div>
+<div id="cols"></div>
+<div id="salida"></div>
+
+<div id="bloqueDetalle" style="display:none">
+  <h3>Tassels Only dentro del filtro (las filas que se restan)</h3>
+  <label>Ver solo la semana (número, vacío = todas): <input id="depSemana" size="4"></label>
+  <button id="copiarRestadas">Copiar listado completo (para pegar en Excel)</button>
+  <div id="detalle"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DIA = 86400000;
+const OBJETIVO_DEFECTO = ["TASSEL QTY", "MASCOT MEDAL QTY"];
+const MAX_RESTADAS = 300000;   // tope de filas guardadas para el listado
+const MAX_VISTA = 500;         // filas que se dibujan en pantalla
+
+let tsv = "";
+let datos = new Map();         // semana (número o "N/A") -> Map(tipo -> {hs, to, ceros})
+let tipos = new Set();
+let inicio = 0;
+let palabraUsada = "";
+let restadas = [];             // [fila, fecha, semana, tipo, valorFiltro, sumaObjetivo, orden, estado]
+let restadasTruncadas = false;
+let rolesGuardados = {};       // nombre de columna -> "obj" | "cero" | "ign"
+
+// ---------- Utilidades ----------
+function splitLinea(linea, delim) {
+  const out = []; let f = "", q = false;
+  for (let i = 0; i < linea.length; i++) {
+    const ch = linea[i];
+    if (q) {
+      if (ch === '"') { if (linea[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { out.push(f); f = ""; }
+    else f += ch;
+  }
+  out.push(f);
+  return out;
+}
+
+function detectarDelim(linea) {
+  const c = (linea.match(/,/g) || []).length;
+  const p = (linea.match(/;/g) || []).length;
+  return p > c ? ";" : ",";
+}
+
+function parseFecha(v, fmt) {
+  v = (v || "").trim();
+  if (!v) return null;
+  let y, mo, d, m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else {
+    m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (!m) return null;
+    const a = +m[1], b = +m[2];
+    y = +m[3]; if (y < 100) y += 2000;
+    if (fmt === "MDY") { mo = a; d = b; } else { d = a; mo = b; }
+  }
+  return Date.UTC(y, mo - 1, d);
+}
+
+function num(v) {
+  const n = parseFloat(String(v).replace(/,/g, ""));
+  return isNaN(n) ? 0 : n;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ---------- Configuración de columnas ----------
+function rolPorDefecto(nombre) {
+  return OBJETIVO_DEFECTO.includes(nombre) ? "obj" : "cero";
+}
+
+function leerRoles() {
+  const roles = {};
+  document.querySelectorAll("#config select[data-col]").forEach(s => {
+    roles[s.dataset.col] = s.value;
+  });
+  return roles;
+}
+
+function pintarItem(sel) {
+  sel.parentElement.className = "item " + sel.value;
+}
+
+function construirConfig(columnasQty) {
+  const cont = $("config");
+  if (!columnasQty.length) { cont.innerHTML = ""; return; }
+  let h = '<fieldset><legend><b>Columnas QTY y su función</b> (' + columnasQty.length + ' encontradas)</legend>' +
+    '<div class="grid">';
+  for (const c of columnasQty) {
+    const rol = rolesGuardados[c] || rolPorDefecto(c);
+    h += '<div class="item ' + rol + '"><span>' + esc(c) + '</span>' +
+      '<select data-col="' + esc(c) + '">' +
+      '<option value="obj"' + (rol === "obj" ? " selected" : "") + '>Objetivo (cuenta)</option>' +
+      '<option value="cero"' + (rol === "cero" ? " selected" : "") + '>Debe ser 0</option>' +
+      '<option value="ign"' + (rol === "ign" ? " selected" : "") + '>Ignorar</option>' +
+      '</select></div>';
+  }
+  h += '</div></fieldset>';
+  cont.innerHTML = h;
+  cont.querySelectorAll("select").forEach(s => s.onchange = () => pintarItem(s));
+}
+
+function construirSelectorFiltro(todasLasColumnas) {
+  const sel = $("colFiltro");
+  const previo = sel.value;
+  sel.innerHTML = "";
+  for (const c of todasLasColumnas) {
+    const o = document.createElement("option");
+    o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  }
+  if (todasLasColumnas.includes(previo)) sel.value = previo;
+  else if (todasLasColumnas.includes("SERVICE ORDER TYPE")) sel.value = "SERVICE ORDER TYPE";
+}
+
+$("archivo").onchange = async () => {
+  const f = $("archivo").files[0];
+  $("config").innerHTML = "";
+  if (!f) return;
+  try {
+    const txt = await f.slice(0, 300000).text();
+    const primera = txt.split(/\r?\n/)[0].replace(/^\uFEFF/, "");
+    const delim = detectarDelim(primera);
+    const cols = splitLinea(primera, delim).map(c => c.trim().toUpperCase()).filter(c => c !== "");
+    construirSelectorFiltro(cols);
+    construirConfig(cols.filter(c => c.endsWith(" QTY")));
+  } catch (e) {
+    $("estado").textContent = "No pude leer el encabezado: " + e.message;
+  }
+};
+
+// ---------- Tabla de resultados ----------
+function render() {
+  const incluir = $("incluirCeros").checked;
+  const P = palabraUsada;
+  const listaTipos = [...tipos].sort();
+  const semanas = [...datos.keys()].filter(k => k !== "N/A").sort((a, b) => a - b);
+  if (datos.has("N/A")) semanas.push("N/A");
+
+  const enc = ["Semana", "Inicio (lunes)"];
+  listaTipos.forEach(t => enc.push(t + " " + P, t + " Tassels Only", t + " Resta"));
+  enc.push("Total " + P, "Total Tassels Only", "Total Resta");
+
+  const n = listaTipos.length;
+  const acum = new Array(3 * n + 3).fill(0);
+  const lineas = [enc];
+  let totHS = 0, totTO = 0, totCeros = 0;
+
+  for (const w of semanas) {
+    const mt = datos.get(w);
+    const etiqueta = w === "N/A" ? "N/A" : "Semana " + w;
+    const lunes = w === "N/A" ? "-" : new Date(inicio + (w - 1) * 7 * DIA).toISOString().slice(0, 10);
+    const r = [etiqueta, lunes];
+    let sHS = 0, sTO = 0;
+    listaTipos.forEach((t, i) => {
+      const o = mt.get(t) || { hs: 0, to: 0, ceros: 0 };
+      const to = o.to + (incluir ? o.ceros : 0);
+      const resta = o.hs - to;
+      r.push(o.hs, to, resta);
+      acum[3 * i] += o.hs; acum[3 * i + 1] += to; acum[3 * i + 2] += resta;
+      sHS += o.hs; sTO += to;
+      totHS += o.hs; totTO += o.to; totCeros += o.ceros;
+    });
+    r.push(sHS, sTO, sHS - sTO);
+    acum[3 * n] += sHS; acum[3 * n + 1] += sTO; acum[3 * n + 2] += sHS - sTO;
+    lineas.push(r);
+  }
+  lineas.push(["TOTAL", "", ...acum]);
+
+  tsv = lineas.map(l => l.join("\t")).join("\n");
+  let html = "<table><tr>" + enc.map(h => "<th>" + esc(h) + "</th>").join("") + "</tr>";
+  for (let i = 1; i < lineas.length; i++) {
+    const esTotal = i === lineas.length - 1;
+    html += "<tr" + (esTotal ? ' class="total"' : "") + ">" +
+      lineas[i].map(c => "<td>" + esc(c) + "</td>").join("") + "</tr>";
+  }
+  $("salida").innerHTML = html + "</table>";
+
+  const toAplicado = totTO + (incluir ? totCeros : 0);
+  $("concilia").textContent =
+    "Filas con " + P + ": " + totHS.toLocaleString() +
+    " | Tassels Only dentro del filtro (restadas): " + toAplicado.toLocaleString() +
+    " | Resta (" + P + " sin Tassels Only): " + (totHS - toAplicado).toLocaleString() +
+    " | Filas con todo en 0 dentro del filtro: " + totCeros.toLocaleString() +
+    (incluir ? " (incluidas en la resta)" : " (NO incluidas en la resta)");
+
+  renderRestadas();
+}
+
+function renderRestadas() {
+  const incluir = $("incluirCeros").checked;
+  const dep = $("depSemana").value.trim();
+  const lista = restadas.filter(r =>
+    (incluir || r[7] === "Tassels only") && (dep === "" || String(r[2]) === dep));
+  $("bloqueDetalle").style.display = restadas.length ? "block" : "none";
+
+  let h = "<p>" + lista.length.toLocaleString() + " filas" +
+    (lista.length > MAX_VISTA ? " (se muestran las primeras " + MAX_VISTA + "; el botón copia todas)" : "") +
+    (restadasTruncadas ? " — ojo: se alcanzó el tope de " + MAX_RESTADAS.toLocaleString() + " filas guardadas para el listado, pero los conteos de la tabla son completos" : "") +
+    "</p><table><tr><th>Fila aprox.</th><th>Fecha</th><th>Semana</th><th>Tipo</th><th>Valor del filtro</th><th>Suma objetivo</th><th>Orden</th><th>Estado</th></tr>";
+  for (const r of lista.slice(0, MAX_VISTA)) {
+    h += "<tr>" + r.map(c => "<td>" + esc(c) + "</td>").join("") + "</tr>";
+  }
+  $("detalle").innerHTML = h + "</table>";
+}
+
+// ---------- Procesamiento ----------
+async function procesar() {
+  const file = $("archivo").files[0];
+  if (!file) { alert("Selecciona el archivo CSV"); return; }
+
+  const PALABRA = $("palabra").value.trim().toUpperCase();
+  if (!PALABRA) { alert("Escribe la palabra a buscar"); return; }
+  const COL_FILTRO = $("colFiltro").value.trim().toUpperCase();
+  const COL_FECHA = $("colFecha").value.trim().toUpperCase();
+  const COL_TIPO = $("colTipo").value.trim().toUpperCase();
+  const COL_ORDEN = $("colOrden").value.trim().toUpperCase();
+  const fmt = $("fmt").value;
+  inicio = Date.parse($("inicio").value);
+  rolesGuardados = leerRoles();
+  palabraUsada = PALABRA;
+
+  let iFiltro = -1, iFecha = -1, iTipo = -1, iOrden = -1, iObj = [], iCero = [], iIgn = [];
+  let header = null;
+  datos = new Map();
+  tipos = new Set();
+  restadas = [];
+  restadasTruncadas = false;
+  let filas = 0, coinciden = 0, fechasMalas = 0, antesDeInicio = 0;
+
+  function emitir(row) {
+    if (row.length === 1 && row[0] === "") return;
+
+    if (!header) {
+      header = row.map(c => c.replace(/^\uFEFF/, "").trim().toUpperCase());
+      iFiltro = header.indexOf(COL_FILTRO);
+      iFecha = header.indexOf(COL_FECHA);
+      iTipo = header.indexOf(COL_TIPO);
+      iOrden = COL_ORDEN ? header.indexOf(COL_ORDEN) : -1;
+      if (iFiltro < 0) throw new Error("No encontré la columna del filtro '" + COL_FILTRO + "'. Encabezados detectados: " + header.join(" | "));
+      if (iFecha < 0 || iTipo < 0) throw new Error("No encontré la columna de fecha o de tipo. Encabezados detectados: " + header.join(" | "));
+      header.forEach((c, i) => {
+        if (!c.endsWith(" QTY")) return;
+        const rol = rolesGuardados[c] || rolPorDefecto(c);
+        if (rol === "obj") iObj.push(i);
+        else if (rol === "ign") iIgn.push(i);
+        else iCero.push(i);
+      });
+      if (!iObj.length) throw new Error("Elige al menos una columna como Objetivo.");
+      $("cols").innerHTML =
+        "<b>Filtro:</b> columna " + esc(COL_FILTRO) + " contiene \"" + esc(PALABRA) + "\"" +
+        "<br><b>Objetivo (" + iObj.length + "):</b> " + esc(iObj.map(i => header[i]).join(", ")) +
+        "<br><b>Deben ser 0 (" + iCero.length + "):</b> " + esc(iCero.map(i => header[i]).join(", ")) +
+        "<br><b>Ignoradas (" + iIgn.length + "):</b> " + (esc(iIgn.map(i => header[i]).join(", ")) || "ninguna") +
+        "<br><b>Columna de orden para el listado:</b> " + (iOrden >= 0 ? esc(COL_ORDEN) : "no encontrada (el listado sale sin orden)");
+      return;
+    }
+
+    filas++;
+
+    // Filtro principal: la columna elegida contiene la palabra (sin distinguir mayúsculas)
+    const valorFiltro = (row[iFiltro] || "").trim();
+    if (!valorFiltro.toUpperCase().includes(PALABRA)) return;
+    coinciden++;
+
+    // Semana: igual que la fórmula de Excel; lo anterior al inicio (o sin fecha válida) es N/A
+    let semana;
+    const t = parseFecha(row[iFecha], fmt);
+    if (t === null) { fechasMalas++; semana = "N/A"; }
+    else {
+      const dias = Math.floor((t - inicio) / DIA);
+      if (dias < 0) { antesDeInicio++; semana = "N/A"; }
+      else semana = Math.floor(dias / 7) + 1;
+    }
+
+    const tipo = (row[iTipo] || "").trim().toUpperCase() || "(VACÍO)";
+    tipos.add(tipo);
+
+    let obj = 0;
+    for (const i of iObj) obj += num(row[i]);
+
+    let hayOtros = false;
+    for (const i of iCero) {
+      if (num(row[i]) !== 0) { hayOtros = true; break; }
+    }
+
+    if (!datos.has(semana)) datos.set(semana, new Map());
+    const mt = datos.get(semana);
+    if (!mt.has(tipo)) mt.set(tipo, { hs: 0, to: 0, ceros: 0 });
+    const o = mt.get(tipo);
+    o.hs++;
+
+    if (!hayOtros) {
+      const esTO = obj > 0;
+      if (esTO) o.to++; else o.ceros++;
+      if (restadas.length < MAX_RESTADAS) {
+        restadas.push([filas + 1, row[iFecha], semana, tipo, valorFiltro, obj,
+          iOrden >= 0 ? (row[iOrden] || "") : "", esTO ? "Tassels only" : "todo en 0"]);
+      } else restadasTruncadas = true;
+    }
+  }
+
+  $("go").disabled = true;
+  $("estado").textContent = "Procesando...";
+  $("concilia").textContent = "";
+  $("cols").textContent = "";
+  $("salida").innerHTML = "";
+  $("detalle").innerHTML = "";
+  $("bloqueDetalle").style.display = "none";
+
+  try {
+    const reader = file.stream().getReader();
+    const dec = new TextDecoder("utf-8");
+    let delim = null, field = "", row = [], inQ = false, pend = false;
+    let leidos = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      let s = done ? "" : dec.decode(value, { stream: true });
+      if (!done) leidos += value.length;
+
+      if (delim === null && s) delim = detectarDelim(s.split("\n")[0]);
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (pend) {
+          pend = false;
+          if (ch === '"') { field += '"'; continue; }
+          inQ = false;
+        }
+        if (inQ) {
+          if (ch === '"') pend = true; else field += ch;
+          continue;
+        }
+        if (ch === '"') inQ = true;
+        else if (ch === delim) { row.push(field); field = ""; }
+        else if (ch === "\n") { row.push(field); field = ""; emitir(row); row = []; }
+        else if (ch !== "\r") field += ch;
+      }
+
+      $("estado").textContent = "Procesando... " + (leidos / 1048576).toFixed(0) +
+        " MB de " + (file.size / 1048576).toFixed(0) + " MB (" + filas.toLocaleString() + " filas)";
+      if (done) break;
+    }
+    if (field !== "" || row.length) { row.push(field); emitir(row); }
+  } catch (e) {
+    $("estado").textContent = "Error: " + e.message;
+    $("go").disabled = false;
+    return;
+  }
+
+  render();
+
+  $("estado").textContent = "Listo. Filas leídas: " + filas.toLocaleString() +
+    " | Con la palabra en el filtro: " + coinciden.toLocaleString() +
+    " | En N/A dentro del filtro: " + (antesDeInicio + fechasMalas).toLocaleString() +
+    " (anteriores al inicio: " + antesDeInicio.toLocaleString() +
+    ", sin fecha válida: " + fechasMalas.toLocaleString() + ")";
+  $("copiar").disabled = false;
+  $("go").disabled = false;
+}
+
+$("go").onclick = procesar;
+$("incluirCeros").onchange = () => { if (datos.size) render(); };
+$("depSemana").oninput = () => { if (restadas.length) renderRestadas(); };
+$("copiar").onclick = async () => {
+  await navigator.clipboard.writeText(tsv);
+  $("estado").textContent += " | Tabla copiada, pégala en Excel.";
+};
+$("copiarRestadas").onclick = async () => {
+  const incluir = $("incluirCeros").checked;
+  const dep = $("depSemana").value.trim();
+  const lista = restadas.filter(r =>
+    (incluir || r[7] === "Tassels only") && (dep === "" || String(r[2]) === dep));
+  const enc = ["Fila aprox.", "Fecha", "Semana", "Tipo", "Valor del filtro", "Suma objetivo", "Orden", "Estado"];
+  const txt = [enc, ...lista].map(l => l.join("\t")).join("\n");
+  await navigator.clipboard.writeText(txt);
+  $("estado").textContent += " | Listado copiado (" + lista.length.toLocaleString() + " filas).";
+};
+</script>
+</body>
+</html>

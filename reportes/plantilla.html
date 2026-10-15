@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plantilla de reporte · Report Hub</title>
+<link rel="icon" href="../icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="reporte.css">
+<script>try { var t = JSON.parse(localStorage.getItem('rh-tema') || '"auto"'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+</head>
+<body>
+<!--
+  PLANTILLA PARA UN REPORTE NUEVO
+  ───────────────────────────────
+  1. Copia este archivo (p. ej. reportes/gowns.html).
+  2. Cambia DATASET, CAMPOS y la función contarFila() (sección «EDITA AQUÍ»).
+  3. Regístralo en js/registry.js (reportes[] y, si alimenta un tablero, dashboards[]).
+  4. Agrega la ruta del archivo a la lista ARCHIVOS de sw.js.
+  Ejemplo incluido: cuenta por semana y tipo las filas con una columna > 0.
+-->
+<div class="rp">
+  <header class="rp-head">
+    <div>
+      <div class="eyebrow">Reporte · plantilla</div>
+      <h1>Conteo por semana (plantilla)</h1>
+      <p>Ejemplo funcional: cuenta por semana y tipo de asignación las filas cuya columna elegida es mayor que 0, y las filas totales.</p>
+    </div>
+    <a class="btn ghost solo-suelto" href="../index.html">← Ir al panel</a>
+  </header>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">1</span> Archivo CSV</h2>
+    <label class="drop" id="zona">
+      <span class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Arrastra aquí el CSV o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora.</small></span>
+      <input type="file" id="archivo" accept=".csv">
+    </label>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">2</span> Configuración</h2>
+    <div class="form-grid">
+      <label class="fld">Columna a contar (&gt; 0) <select id="colValor"><option>GOWN QTY</option></select></label>
+      <label class="fld">Lunes de la Semana 1 <input type="date" id="inicio" value="2025-06-30"><span class="hint" id="inicioInfo"></span></label>
+      <label class="fld">Temporada <input id="temporada" placeholder="p. ej. 2026"></label>
+      <label class="fld">Formato de fecha
+        <select id="fmt"><option value="MDY">Mes/Día/Año</option><option value="DMY">Día/Mes/Año</option></select>
+      </label>
+      <label class="fld">Columna de fecha <input id="colFecha" value="IMPORTED"></label>
+      <label class="fld">Columna de tipo <input id="colTipo" value="ASSIGNMENT TYPE"></label>
+    </div>
+    <div class="inline">Temporadas ya guardadas: <span class="chips" id="temporadas"></span></div>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">3</span> Procesar</h2>
+    <div class="actions">
+      <button id="go" class="btn primary lg" type="button">Procesar</button>
+      <button id="copiar" class="btn" type="button" disabled>Copiar tabla (para pegar en Excel)</button>
+    </div>
+    <div class="progress" id="progreso" hidden><div></div></div>
+    <div id="estado"></div>
+  </section>
+
+  <section class="card save" id="panelGuardar" hidden></section>
+  <section class="card" id="resultados" hidden><div id="salida" class="table-wrap"></div></section>
+</div>
+
+<script src="../js/core/util.js"></script>
+<script src="../js/core/store.js"></script>
+<script src="../js/core/csv.js"></script>
+<script src="../js/registry.js"></script>
+<script src="../js/puente.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+
+// ═══════════════════════════ EDITA AQUÍ ═══════════════════════════
+const DATASET = 'plantilla';            // mismo valor que "dataset" en js/registry.js
+const CAMPOS = ['con', 'filas'];         // números que se guardan por semana y tipo
+/** Decide qué suma cada fila. idx = índices de columnas; c = objeto de campos de esa semana/tipo */
+function contarFila(row, idx, c) {
+  c.filas++;
+  if (RH.csv.num(row[idx.valor]) > 0) c.con++;
+}
+// ══════════════════════════════════════════════════════════════════
+
+let datos = new Map(), tipos = new Set(), ultimo = null, tsv = '';
+
+$('archivo').addEventListener('change', async () => {
+  const f = $('archivo').files[0];
+  if (!f) return;
+  const cols = await RH.csv.encabezados(f);
+  const sel = $('colValor'), previo = sel.value;
+  sel.replaceChildren(...cols.filter(c => c.endsWith(' QTY')).map(c => new Option(c, c)));
+  if (cols.includes(previo)) sel.value = previo;
+});
+
+async function procesar() {
+  const file = $('archivo').files[0];
+  if (!file) { alert('Selecciona el archivo CSV'); return; }
+  const fmt = $('fmt').value, inicio = Date.parse($('inicio').value);
+  const nombres = { fecha: $('colFecha').value.trim().toUpperCase(), tipo: $('colTipo').value.trim().toUpperCase(), valor: $('colValor').value.trim().toUpperCase() };
+  const idx = {};
+  datos = new Map(); tipos = new Set();
+  $('go').disabled = true; $('progreso').hidden = false; guardarUI.ocultar();
+  try {
+    const r = await RH.csv.leer(file, {
+      alEncabezado(h) {
+        for (const [k, n] of Object.entries(nombres)) { idx[k] = h.indexOf(n); if (idx[k] < 0) throw new Error('No encontré la columna ' + n); }
+      },
+      alFila(row) {
+        const { semana } = RH.csv.semana(row[idx.fecha], inicio, fmt);
+        const tipo = (row[idx.tipo] || '').trim().toUpperCase() || '(VACÍO)';
+        tipos.add(tipo);
+        if (!datos.has(semana)) datos.set(semana, new Map());
+        const mt = datos.get(semana);
+        if (!mt.has(tipo)) { const c = {}; CAMPOS.forEach(k => c[k] = 0); mt.set(tipo, c); }
+        contarFila(row, idx, mt.get(tipo));
+      },
+      alProgreso(leidos, total, filas) {
+        $('estado').textContent = 'Procesando... ' + (leidos / 1048576).toFixed(0) + ' MB de ' + (total / 1048576).toFixed(0) + ' MB (' + filas.toLocaleString() + ' filas)';
+        $('progreso').firstElementChild.style.width = (total ? leidos / total * 100 : 100) + '%';
+      }
+    });
+    pintar();
+    $('estado').textContent = 'Listo. Filas leídas: ' + r.filas.toLocaleString();
+    ultimo = { datos, inicioIso: $('inicio').value, archivo: RH.puente.metaArchivo(file), filas: r.filas, config: { fmt, columnas: nombres } };
+    guardarUI.mostrar('Temporada ' + ($('temporada').value || '(sin etiqueta)') + ' · ' + r.filas.toLocaleString() + ' filas · ' + tipos.size + ' tipos.');
+  } catch (e) { $('estado').textContent = 'Error: ' + e.message; }
+  $('go').disabled = false;
+}
+
+function pintar() {
+  const lista = [...tipos].sort();
+  const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
+  const enc = ['Semana', ...lista.flatMap(t => CAMPOS.map(c => t + ' ' + c))];
+  const filas = semanas.map(w => ['Semana ' + w, ...lista.flatMap(t => CAMPOS.map(c => ((datos.get(w).get(t) || {})[c]) || 0))]);
+  tsv = [enc, ...filas].map(l => l.join('\t')).join('\n');
+  const esc = RH.util.esc;
+  $('salida').innerHTML = '<table><tr>' + enc.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>' +
+    filas.map(f => '<tr>' + f.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+  $('resultados').hidden = false;
+  $('copiar').disabled = false;
+}
+
+const guardarUI = RH.puente.panelGuardar({
+  contenedor: $('panelGuardar'),
+  dataset: DATASET,
+  construir() {
+    if (!ultimo) throw new Error('Primero procesa un archivo.');
+    return Object.assign(RH.puente.desdeMapa(ultimo.datos, CAMPOS), {
+      dataset: DATASET, season: $('temporada').value.trim(), week1: ultimo.inicioIso,
+      meta: { reporte: DATASET, archivo: ultimo.archivo, filas: ultimo.filas, config: ultimo.config }
+    });
+  }
+});
+
+$('go').onclick = procesar;
+$('copiar').onclick = async () => { await RH.util.copiarTexto(tsv); RH.util.toast('Tabla copiada.', { tipo: 'ok' }); };
+$('inicio').value = RH.util.inicioTemporada(RH.util.temporadaActual());
+RH.puente.zonaArchivo($('zona'), $('archivo'), $('archivoInfo'));
+RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
+RH.puente.actualizarTemporadas({ dataset: DATASET, chips: $('temporadas'), temporadaInput: $('temporada'), inicioInput: $('inicio') });
+</script>
+</body>
+</html>
