@@ -231,9 +231,13 @@ producto y medida se guarda un reporte `PRODUCTO_temporada_sum` o `PRODUCTO_temp
 Se comprobó contra un cálculo independiente (4 vistas, con N/A, tipos en minúsculas y cantidades
 con coma). Para otro reporte con productos distintos basta con elegir otras columnas.
 
-**N/A antes de la semana 1:** en todos los reportes, las filas con fecha anterior al lunes de la
-semana 1 (o sin fecha legible) se muestran primero, antes de la semana 1. Es el único cambio de
-presentación respecto a los HTML originales (que lo mostraban al final); los números no cambian.
+**52 semanas y N/A:** en todos los reportes la tabla muestra siempre las semanas 1–52 (con ceros
+si no hay datos; si hubiera fechas posteriores, aparecen después). Todo lo anterior al lunes de la
+semana 1 (por ejemplo enero o febrero, salteado) o sin fecha se suma en **una sola fila N/A**
+(«semana 0»), antes de la semana 1; el TOTAL queda al final. En los dashboards, el panorama y la
+proyección el N/A se incluye como semana 0 en los totales y comparativos (interruptor «Incluir
+N/A»). La temporada se sugiere por el año en que termina (empieza 29/6/2026 → «2027»).
+Estos son los únicos cambios de presentación respecto a los HTML originales; los conteos no cambian.
 
 ## Proyección de temporada
 

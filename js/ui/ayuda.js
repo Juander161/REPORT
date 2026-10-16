@@ -92,7 +92,7 @@
         <li>En <strong>Gowns</strong> (Reportes) elige el archivo y, según su estructura, la <strong>columna de fecha</strong> (define las semanas), la <strong>columna de tipo</strong> y los <strong>tipos a incluir</strong> (por defecto GREG y COLL).</li>
         <li>Marca los <strong>productos</strong> (columnas de cantidad) y las <strong>medidas</strong>: <em>cantidades</em> = suma de la columna; <em>órdenes</em> = filas con cantidad mayor que 0.</li>
         <li>Al guardar se crea un reporte por producto y medida, con nombre <code>producto_temporada_sum</code> o <code>producto_temporada_count</code> (por ejemplo <code>GOWN_2026_sum</code>). En el dashboard eliges «Producto y medida».</li>
-        <li>Las filas con fecha anterior al lunes de la semana 1 (o sin fecha) van a <strong>N/A</strong>, que aparece <strong>antes</strong> de la semana 1 en todos los reportes.</li>
+        <li>Todas las tablas muestran siempre las <strong>52 semanas</strong>. Las filas con fecha anterior al lunes de la semana 1 (o sin fecha) se suman en una sola fila <strong>N/A</strong> («semana 0»), antes de la semana 1, en todos los reportes. En los dashboards y la proyección el N/A se incluye en los totales (interruptor «Incluir N/A»).</li>
       </ol>
     </section>
 

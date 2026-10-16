@@ -40,7 +40,7 @@
     <h2 class="step-h"><span class="step-n">2</span> Configuración</h2>
     <div class="form-grid">
       <label class="fld">Lunes de la Semana 1 <input type="date" id="inicio" value="2025-06-30"><span class="hint" id="inicioInfo"></span></label>
-      <label class="fld">Temporada (etiqueta en el dashboard) <input id="temporada" placeholder="p. ej. 2026"><span class="hint">Se sugiere con el año del lunes de la semana 1.</span></label>
+      <label class="fld">Temporada (etiqueta en el dashboard) <input id="temporada" placeholder="p. ej. 2026"><span class="hint">Se sugiere con el año en que termina la temporada (empieza en 2025 → «2026»).</span></label>
       <label class="fld">Formato de fecha
         <select id="fmt">
           <option value="MDY">Mes/Día/Año (11/10/2025 = 10 nov)</option>
@@ -210,7 +210,9 @@ $("hoja").onchange = () => $("archivo").onchange();
 function render() {
   const incluir = $("incluirCeros").checked;
   const listaTipos = [...tipos].sort();
-  const semanas = [...datos.keys()].filter(k => k !== "N/A").sort((a, b) => a - b);
+  // siempre las 52 semanas de la temporada (con ceros si no hay datos) y, si existen, las posteriores
+  const maxSem = Math.max(52, ...[...datos.keys()].filter(k => k !== "N/A"));
+  const semanas = Array.from({ length: maxSem }, (_, i) => i + 1);
   if (datos.has("N/A")) semanas.unshift("N/A");   // lo previo a la semana 1 va primero
 
   const enc = ["Semana", "Inicio (lunes)"];
@@ -222,7 +224,7 @@ function render() {
   let totTO = 0, totCeros = 0, totFilas = 0;
 
   for (const w of semanas) {
-    const mt = datos.get(w);
+    const mt = datos.get(w) || new Map();
     const etiqueta = w === "N/A" ? "N/A" : "Semana " + w;
     const lunes = w === "N/A" ? "-" : new Date(inicio + (w - 1) * 7 * DIA).toISOString().slice(0, 10);
     const r = [etiqueta, lunes];

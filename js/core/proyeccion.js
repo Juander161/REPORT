@@ -55,13 +55,17 @@
     const H = Math.max(k, Math.min(M.MAX_SEMANA, e.H || Math.max(k, ...bases.map(b => M.ultimaSemana(b)))));
     const wc = semanal(cur, e.medida, e.tipos, e.optsCur, H);
     const real = wc.slice(0, k).map(v => v || 0);
-    const ytd = sum(real, 1, k);
+    // lo previo a la semana 1 (N/A) se suma como «semana 0»
+    const naDe = (snap, o) => { if (!e.incluirNA || !M.tieneNA(snap)) return 0; const a = M.agregado(snap, 0, e.tipos); return a ? e.medida(a, o || {}) : 0; };
+    const naC = naDe(cur, e.optsCur);
+    const ytd = sum(real, 1, k) + naC;
     const m = Math.max(1, Math.min(e.ventana || 4, k));
 
     const B = bases.map(b => {
       const w = semanal(b, e.medida, e.tipos, e.optsBase ? e.optsBase(b) : e.optsCur, H);
       const L = M.ultimaSemana(b);
-      return { snap: b, season: b.season, w, L, cubre: L >= k, total: sum(w, 1, H), ytd: sum(w, 1, k) };
+      const naB = naDe(b, e.optsBase ? e.optsBase(b) : e.optsCur);
+      return { snap: b, season: b.season, w, L, cubre: L >= k, total: sum(w, 1, H) + naB, ytd: sum(w, 1, k) + naB, naB };
     });
     const util = B.filter(b => b.cubre);
     const notas = [];
@@ -132,11 +136,11 @@
     const nSem = H - k;
 
     // series acumuladas para graficar (semanas 1..H)
-    const acum = a => { let s = 0; return a.map(v => v == null ? null : (s += v)); };
-    const realAc = acum(real);
+    const acum = (a, ini) => { let s = ini || 0; return a.map(v => v == null ? null : (s += v)); };
+    const realAc = acum(real, naC);
     const proyAc = (f) => { let s = ytd; return Array.from({ length: H }, (_, i) => i + 1 < k ? null : i + 1 === k ? ytd : (s += f[i - k])); };
     return {
-      k, H, ytd, nSem, real, bases: B, util, notas, metodos: METODOS, todos, sel,
+      k, H, ytd, naC, nSem, real, bases: B, util, notas, metodos: METODOS, todos, sel,
       refBase, crecimiento: sel.total != null && refBase ? sel.total / refBase - 1 : null,
       semanas: Array.from({ length: H }, (_, i) => i + 1),
       series: {
@@ -144,7 +148,7 @@
         central: sel.central ? proyAc(sel.central) : null,
         low: sel.lowF ? proyAc(sel.lowF) : null,
         high: sel.highF ? proyAc(sel.highF) : null,
-        basesAc: B.map(b => ({ season: b.season, v: acum(b.w) })),
+        basesAc: B.map(b => ({ season: b.season, v: acum(b.w, b.naB) })),
         semReal: real.concat(Array(H - k).fill(null)),
         semProy: sel.central ? Array(k).fill(null).concat(sel.central) : null
       }

@@ -79,8 +79,15 @@
     /** Suma de campos de una semana (o del bloque N/A) filtrando por tipos */
     agregado(snap, semana, tipos) {
       if (!snap) return null;
+      // la semana 0 es el bloque N/A: todo lo anterior al lunes de la semana 1 (o sin fecha), sumado
+      if (semana === 0) semana = 'N/A';
       if (semana !== 'N/A' && (semana < 1 || semana > M.ultimaSemana(snap))) return null;
       return sumarBloque(semana === 'N/A' ? snap.na : (snap.weeks || {})[semana], tipos);
+    },
+
+    /** ¿La temporada tiene datos N/A (previos a la semana 1 o sin fecha)? */
+    tieneNA(snap) {
+      return !!snap && !!snap.na && Object.values(snap.na).some(c => Object.values(c || {}).some(v => +v));
     },
 
     /** Medida de las semanas fuera de rango (no se grafican, pero sí están en el TOTAL del HTML) */
@@ -90,8 +97,8 @@
     },
 
     agregadoTipo(snap, semana, tipo) {
-      if (!snap || semana < 1 || semana > M.ultimaSemana(snap)) return null;
-      const b = ((snap.weeks || {})[semana] || {})[tipo];
+      if (!snap || semana < 0 || semana > M.ultimaSemana(snap)) return null;
+      const b = (semana === 0 ? (snap.na || {}) : ((snap.weeks || {})[semana] || {}))[tipo];
       return b ? Object.assign({}, b) : {};
     },
 

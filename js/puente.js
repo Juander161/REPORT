@@ -191,7 +191,7 @@
   function enlazarTemporada(inicio, temporada, info) {
     const sugerir = () => {
       const v = inicio.value;
-      if (!temporada.dataset.manual && /^\d{4}/.test(v)) temporada.value = etiquetaPorLunes.get(v) || v.slice(0, 4);
+      if (!temporada.dataset.manual && /^\d{4}/.test(v)) temporada.value = etiquetaPorLunes.get(v) || String(+v.slice(0, 4) + 1);   // la temporada se nombra por el año en que termina
       if (info) {
         if (!v) { info.textContent = ''; return; }
         const d = new Date(v + 'T00:00:00Z');

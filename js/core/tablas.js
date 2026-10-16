@@ -25,6 +25,14 @@
     return { datos, tipos };
   }
 
+  const SEMANAS_TEMPORADA = 52;
+  /** Semanas 1..52 siempre (con ceros si no hay datos) y, si existen, las posteriores con datos */
+  function semanasTabla(datos) {
+    const hay = [...datos.keys()].filter(k => k !== 'N/A').map(Number);
+    const fin = Math.max(SEMANAS_TEMPORADA, ...hay);
+    return Array.from({ length: fin }, (_, i) => i + 1);
+  }
+
   function lunesDe(snap, w) {
     const inicio = Date.parse(snap.week1);
     return w === 'N/A' ? '-' : new Date(inicio + (w - 1) * 7 * DIA).toISOString().slice(0, 10);
@@ -34,7 +42,7 @@
   function tasselOnly(snap, incluir) {
     const { datos, tipos } = mapa(snap);
     const listaTipos = [...tipos].sort();
-    const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
+    const semanas = semanasTabla(datos);
     if (datos.has('N/A')) semanas.unshift('N/A');   // lo previo a la semana 1 va primero
     const enc = ['Semana', 'Inicio (lunes)'];
     listaTipos.forEach(t => enc.push(t + ' Tassels Only'));
@@ -43,7 +51,7 @@
     const acum = new Array(listaTipos.length + 2).fill(0);
     let totTO = 0, totCeros = 0, totFilas = 0;
     for (const w of semanas) {
-      const mt = datos.get(w);
+      const mt = datos.get(w) || new Map();   // semana sin datos = ceros
       const r = [w === 'N/A' ? 'N/A' : 'Semana ' + w, lunesDe(snap, w)];
       let tot = 0, ord = 0;
       listaTipos.forEach((t, i) => {
@@ -74,7 +82,7 @@
     const { datos, tipos } = mapa(snap);
     const P = (snap.meta && snap.meta.config && snap.meta.config.palabra) || 'HOMESHIP';
     const listaTipos = [...tipos].sort();
-    const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
+    const semanas = semanasTabla(datos);
     if (datos.has('N/A')) semanas.unshift('N/A');   // lo previo a la semana 1 va primero
     const enc = ['Semana', 'Inicio (lunes)'];
     listaTipos.forEach(t => enc.push(t + ' ' + P, t + ' Tassels Only', t + ' Resta'));
@@ -84,7 +92,7 @@
     const lineas = [enc];
     let totHS = 0, totTO = 0, totCeros = 0;
     for (const w of semanas) {
-      const mt = datos.get(w);
+      const mt = datos.get(w) || new Map();   // semana sin datos = ceros
       const r = [w === 'N/A' ? 'N/A' : 'Semana ' + w, lunesDe(snap, w)];
       let sHS = 0, sTO = 0;
       listaTipos.forEach((t, i) => {
@@ -119,7 +127,7 @@
     const { datos, tipos } = mapa(snap);
     const m = snap.meta || {};
     const listaTipos = [...tipos].sort();
-    const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
+    const semanas = semanasTabla(datos);
     if (datos.has('N/A')) semanas.unshift('N/A');
     const etiqueta = (m.producto || 'Producto') + (m.modo === 'count' ? ' · órdenes' : ' · cantidades');
     const enc = ['Semana', 'Inicio (lunes)'];
@@ -129,7 +137,7 @@
     const acum = new Array(listaTipos.length + 1).fill(0);
     let totNA = 0;
     for (const w of semanas) {
-      const mt = datos.get(w);
+      const mt = datos.get(w) || new Map();   // semana sin datos = ceros
       const r = [w === 'N/A' ? 'N/A' : 'Semana ' + w, lunesDe(snap, w)];
       let tot = 0;
       listaTipos.forEach((t, i) => { const v = ((mt.get(t) || {}).v) || 0; r.push(v); tot += v; acum[i] += v; });
@@ -147,5 +155,5 @@
     };
   }
 
-  RH.tablas = { 'tassel-only': tasselOnly, homeship, gowns, mapa };
+  RH.tablas = { SEMANAS_TEMPORADA, 'tassel-only': tasselOnly, homeship, gowns, mapa };
 })(window.RH = window.RH || {});

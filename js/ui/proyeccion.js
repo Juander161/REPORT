@@ -143,6 +143,11 @@
       if (metodo.id === 'reciente') {
         filtros.appendChild(campo('Últimas semanas', sel([2, 3, 4, 6, 8].map(n => [n, n + ' semanas']), e.ventana || 4, v => { e.ventana = +v; cambio(); }, 'Ventana reciente')));
       }
+      if (M.tieneNA(c.cur) || c.bases.some(b => M.tieneNA(b))) {
+        const cbNA = el('input', { type: 'checkbox', role: 'switch', checked: e.incluirNA !== false });
+        cbNA.addEventListener('change', () => { e.incluirNA = cbNA.checked; cambio(); });
+        filtros.appendChild(campo('Previo a la semana 1', el('label', { class: 'switch', title: 'Suma como «semana 0» (N/A) todo lo anterior al lunes de la semana 1 o sin fecha, tanto en esta temporada como en las base.' }, cbNA, el('span', { class: 'sw' }), el('span', null, 'Incluir N/A'))));
+      }
       (c.dash.opciones || []).forEach(o => {
         const cb = el('input', { type: 'checkbox', role: 'switch', checked: !!c.optsDe(c.cur)[o.id] });
         cb.addEventListener('change', () => { e.opts = Object.assign({}, e.opts, { [o.id]: cb.checked }); cambio(); });
@@ -173,7 +178,7 @@
       const r = c.bases.length ? P.calcular({
         cur: c.cur, bases: c.bases, medida: c.med.medida, tipos: c.tipos,
         optsCur: c.optsDe(c.cur), optsBase: c.optsDe, k: c.k, H: e.H && e.H >= c.k ? e.H : null,
-        metodo: e.metodo || 'indice', ventana: e.ventana || 4
+        metodo: e.metodo || 'indice', ventana: e.ventana || 4, incluirNA: e.incluirNA !== false
       }) : null;
       ultimoCalc = { c, r };
 
@@ -210,7 +215,7 @@
           el('div', { class: 'kpi-n' }, s.detalle || '')),
         el('div', { class: 'kpi' }, el('div', { class: 'kpi-l' }, 'Rango estimado'), el('div', { class: 'kpi-v' }, fmt(s.low) + ' – ' + fmt(s.high)),
           el('div', { class: 'kpi-n' }, ancho > 0 ? '±' + fmt(ancho / 2) + ' alrededor del centro · ' : 'Sin dispersión (una sola referencia) · ', 'mín–máx entre ', RH.info.termino('referencias', 'rango'))),
-        el('div', { class: 'kpi' }, el('div', { class: 'kpi-l' }, 'Real a la fecha (S1–S' + r.k + ')'), el('div', { class: 'kpi-v' }, fmt(r.ytd)),
+        el('div', { class: 'kpi' }, el('div', { class: 'kpi-l' }, 'Real a la fecha (S1–S' + r.k + (r.naC ? ' + N/A' : '') + ')'), el('div', { class: 'kpi-v' }, fmt(r.ytd)),
           el('div', { class: 'kpi-n' }, s.total ? Math.round(r.ytd / s.total * 100) + ' % del cierre estimado' : '')),
         el('div', { class: 'kpi' }, el('div', { class: 'kpi-l' }, 'Falta por llegar'), el('div', { class: 'kpi-v' }, fmt(Math.max(0, s.total - r.ytd))),
           el('div', { class: 'kpi-n' }, r.nSem + ' semana' + (r.nSem === 1 ? '' : 's') + ' (S' + (r.k + 1) + '–S' + r.H + ')' + (r.nSem ? ' · ' + fmt((s.total - r.ytd) / r.nSem) + ' por semana' : ''))));
