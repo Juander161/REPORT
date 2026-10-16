@@ -68,8 +68,13 @@ abierta y el botón «Restablecer filtros» los regresa a su estado inicial.
 4. **Guardar en el dashboard**. Si la temporada ya existía, se reemplaza por la nueva
    versión. Si cambias algo después de procesar, hay que volver a procesar.
 
-En archivos de Excel las fechas se leen como fechas reales (no dependen del formato
-Mes/Día o Día/Mes). Los .xls antiguos se deben guardar como .xlsx o CSV.
+En archivos de Excel las celdas se leen por su **valor**, no por el texto que muestran:
+las fechas reales no dependen del formato Mes/Día o Día/Mes (ese selector solo aplica a
+fechas escritas como texto) y una cantidad 0.4 con formato «0» cuenta como 0.4. Se lee
+la **hoja activa** del libro (la misma que Excel guarda como CSV) salvo que elijas otra.
+Las filas en blanco entre datos cuentan igual que en el CSV (van a N/A como «sin fecha
+válida»); las del final de la hoja se ignoran. Los .xls antiguos y los libros con
+contraseña se deben guardar como .xlsx sin contraseña o como CSV.
 
 La temporada del año pasado se procesa **una sola vez**: queda guardada y ya no hay
 que volver a cargarla. En «Temporadas ya guardadas» puedes hacer clic en una para

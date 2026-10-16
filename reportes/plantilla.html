@@ -35,6 +35,7 @@
       <span><strong>Arrastra aquí el CSV o el Excel (.xlsx) o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora.</small></span>
       <input type="file" id="archivo" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
     </label>
+    <label class="fld fld-hoja" id="hojaWrap" hidden>Hoja del libro de Excel <select id="hoja"></select></label>
   </section>
 
   <section class="card">
@@ -86,27 +87,46 @@ function contarFila(row, idx, c) {
 // ══════════════════════════════════════════════════════════════════
 
 let datos = new Map(), tipos = new Set(), ultimo = null, tsv = '';
+let procesando = false, cambioDurante = false;
 
-$('archivo').addEventListener('change', async () => {
+async function alElegirArchivo() {
   const f = $('archivo').files[0];
+  $('hojaWrap').hidden = true;
   if (!f) return;
-  const cols = await RH.csv.encabezados(f);
-  const sel = $('colValor'), previo = sel.value;
-  sel.replaceChildren(...cols.filter(c => c.endsWith(' QTY')).map(c => new Option(c, c)));
-  if (cols.includes(previo)) sel.value = previo;
-});
+  try {
+    // Excel: llena el selector de hoja (por defecto la activa del libro) y lee su encabezado
+    const cols = RH.puente.esExcel(f)
+      ? (await RH.puente.prepararExcel(f, $('hoja'), $('hojaWrap'))).map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase())
+      : await RH.csv.encabezados(f);
+    const sel = $('colValor'), previo = sel.value;
+    sel.replaceChildren(...cols.filter(c => c.endsWith(' QTY')).map(c => new Option(c, c)));
+    if (cols.includes(previo)) sel.value = previo;
+    $('estado').textContent = '';
+  } catch (e) {
+    $('estado').textContent = 'No pude leer el encabezado: ' + e.message;
+  }
+}
+$('archivo').addEventListener('change', alElegirArchivo);
+$('hoja').addEventListener('change', alElegirArchivo);
 
+// si la configuración cambia MIENTRAS se procesa, el resultado no se puede guardar
 async function procesar() {
+  procesando = true; cambioDurante = false;
+  try { await procesarArchivo(); } finally { procesando = false; }
+}
+
+async function procesarArchivo() {
   const file = $('archivo').files[0];
   if (!file) { alert('Selecciona el archivo CSV'); return; }
-  const fmt = $('fmt').value, inicio = Date.parse($('inicio').value);
+  const fmt = $('fmt').value, inicio = Date.parse($('inicio').value), inicioIso = $('inicio').value;
   const nombres = { fecha: $('colFecha').value.trim().toUpperCase(), tipo: $('colTipo').value.trim().toUpperCase(), valor: $('colValor').value.trim().toUpperCase() };
   const idx = {};
-  datos = new Map(); tipos = new Set();
+  datos = new Map(); tipos = new Set(); ultimo = null;
   $('go').disabled = true; $('progreso').hidden = false; guardarUI.ocultar();
   try {
+    const hoja = RH.puente.esExcel(file) ? $('hoja').value : null;
     const r = await RH.csv.leer(file, {
-      columnasFecha: [nombres.fecha],
+      hoja, columnasFecha: [nombres.fecha],
       alEncabezado(h) {
         for (const [k, n] of Object.entries(nombres)) { idx[k] = h.indexOf(n); if (idx[k] < 0) throw new Error('No encontré la columna ' + n); }
       },
@@ -126,7 +146,8 @@ async function procesar() {
     });
     pintar();
     $('estado').textContent = 'Listo. Filas leídas: ' + r.filas.toLocaleString();
-    ultimo = { datos, inicioIso: $('inicio').value, archivo: RH.puente.metaArchivo(file), filas: r.filas, config: { fmt, columnas: nombres } };
+    if (cambioDurante) throw new Error('La configuración cambió mientras se procesaba: pulsa «Procesar» otra vez.');
+    ultimo = { datos, inicioIso, archivo: RH.puente.metaArchivo(file, hoja), filas: r.filas, config: { fmt, columnas: nombres } };
     const avisos = RH.puente.avisosResultado({ base: r.filas, antesDeInicio: (datos.get('N/A') ? [...datos.get('N/A').values()].reduce((a, c) => a + c.filas, 0) : 0), fechasMalas: 0, maxSemana: Math.max(0, ...[...datos.keys()].filter(k => k !== 'N/A')) });
     if (avisos.length) RH.util.toast(avisos.join(' '), { tipo: 'warn', ms: 9000 });
     guardarUI.mostrar('Temporada ' + ($('temporada').value || '(sin etiqueta)') + ' · ' + r.filas.toLocaleString() + ' filas · ' + tipos.size + ' tipos.');
@@ -162,6 +183,14 @@ const guardarUI = RH.puente.panelGuardar({
 $('go').onclick = procesar;
 $('copiar').onclick = async () => { await RH.util.copiarTexto(tsv); RH.util.toast('Tabla copiada.', { tipo: 'ok' }); };
 RH.puente.zonaArchivo($('zona'), $('archivo'), $('archivoInfo'));
+// si cambia algo que afecta el cálculo después de procesar, el resultado ya no se puede guardar
+RH.puente.invalidarAlCambiar([$('archivo'), $('hoja'), $('inicio'), $('fmt'), $('colFecha'), $('colTipo'), $('colValor')], () => {
+  if (procesando) { cambioDurante = true; return; }
+  if (!ultimo) return;
+  ultimo = null;
+  guardarUI.ocultar();
+  $('estado').textContent = 'La configuración cambió: pulsa «Procesar» otra vez antes de guardar en el dashboard.';
+});
 RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
 RH.puente.actualizarTemporadas({ dataset: DATASET, chips: $('temporadas'), temporadaInput: $('temporada'), inicioInput: $('inicio') });
 </script>

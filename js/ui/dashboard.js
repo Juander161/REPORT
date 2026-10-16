@@ -230,13 +230,25 @@
       specs: { semanal: specSemanal, variacion: specVar, tipos: specTipo, participacion: specPart, mezcla: specMezcla },
       calor
     };
-    const naM = metrica.tipo !== 'ratio' && cur.na ? M.medir(metrica, M.agregado(cur, 'N/A', tiposSel), opts) : null;
-    vm.naCur = naM && naM.v ? naM.v : 0;
+    const naDe = (s, o) => { const m = metrica.tipo !== 'ratio' && s && s.na ? M.medir(metrica, M.agregado(s, 'N/A', tiposSel), o) : null; return m && m.v ? m.v : 0; };
+    const fueraDe = (s, o) => { const m = metrica.tipo !== 'ratio' ? M.medirFuera(s, metrica, tiposSel, o) : null; return m && m.v ? m.v : 0; };
+    vm.naCur = naDe(cur, opts);
+    vm.naPrev = prev ? naDe(prev, optsPrev) : 0;
     vm.fueraCur = M.semanasFuera(cur).length;
+    vm.fueraPrev = prev ? M.semanasFuera(prev).length : 0;
+    vm.fueraCurV = fueraDe(cur, opts);
+    vm.fueraPrevV = prev ? fueraDe(prev, optsPrev) : 0;
     vm.kpis = kpis(vm);
     vm.hallazgos = hallazgos(vm);
     vm.detalle = detalle(vm);
     return vm;
+  }
+
+  /** Si el interruptor del dashboard fuerza una opción distinta de la que se usó al procesar */
+  function notaForzada(snap, vm) {
+    const conf = (snap.meta && snap.meta.config) || {};
+    const o = (vm.dash.opciones || []).find(op => op.id in vm.override && !!conf[op.id] !== !!vm.override[op.id]);
+    return o ? ' (forzado en el dashboard; se procesó con ' + (conf[o.id] ? 'Sí' : 'No') + ')' : '';
   }
 
   function rangoTxt(ws) {
@@ -269,13 +281,18 @@
         delta: prev ? delta(vc, vp, fmtM) : null,
         nota: (prev ? 'vs ' + prev.season + ' en las mismas ' + vm.semK.length + ' semana' + (vm.semK.length === 1 ? '' : 's') + ' (' + rangoTxt(vm.semK) + ')' : vm.periodo) +
           (vm.parcial && vm.selec.includes(vm.parcial.semana) ? ' · incluye S' + vm.parcial.semana + ' en curso' : '') +
-          (vm.naCur ? ' · sin contar la fila N/A (' + G.fmtValor(vm.naCur, fmtM) + '; ver «Tabla del reporte»)' : '')
+          (vm.naCur || vm.fueraCurV ? ' · sin contar ' + [vm.naCur ? 'la fila N/A (' + G.fmtValor(vm.naCur, fmtM) + ')' : '', vm.fueraCurV ? 'semanas fuera de rango (' + G.fmtValor(vm.fueraCurV, fmtM) + ')' : ''].filter(Boolean).join(' ni ') + '; ver «Tabla del reporte»' : '')
       });
       if (prev) {
         const comp = vm.totPrevCompleta && vm.totPrevCompleta.v;
         const masSemanas = vm.ultPrev > (vm.semK.length ? vm.semK[vm.semK.length - 1] : 0);
+        // con todos los tipos, la temporada completa + N/A + semanas fuera de rango = TOTAL de su HTML
+        const resto = !tiposSel && comp != null && (vm.naPrev || vm.fueraPrevV)
+          ? ' · TOTAL del HTML: ' + G.fmtValor(comp + vm.naPrev + vm.fueraPrevV, fmtM) + ' (= ' + G.fmtValor(comp, fmtM) +
+            (vm.naPrev ? ' + N/A ' + G.fmtValor(vm.naPrev, fmtM) : '') + (vm.fueraPrevV ? ' + fuera de rango ' + G.fmtValor(vm.fueraPrevV, fmtM) : '') + ')'
+          : '';
         out.push({ etiqueta: 'Temporada ' + prev.season + ' · mismas semanas', valor: vp, formato: fmtM,
-          nota: 'Mismo periodo · semanas ' + rangoTxt(vm.semK) + (masSemanas && comp != null ? ' · temporada completa (S1–S' + vm.ultPrev + '): ' + G.fmtValor(comp, fmtM) : '') });
+          nota: 'Mismo periodo · semanas ' + rangoTxt(vm.semK) + ((masSemanas || resto) && comp != null ? ' · temporada completa (S1–S' + vm.ultPrev + '): ' + G.fmtValor(comp, fmtM) : '') + resto });
       }
 
       const semCur = (prev ? vm.semK : vm.selec.filter(w => w <= vm.ultCur));
@@ -507,19 +524,27 @@
     });
     const d1 = r0 + 1, d2 = r0 + vm.detalle.length;
     if (!pct && vm.detalle.length > 1) {
-      const rt = d2 + 1, xr = rt + 1;
-      const fila = [{ v: 'Total semanas mostradas (sin N/A)', s: 'totTexto' }, { v: '', s: 'totTexto' }];
-      if (prev) fila.push({ v: '', s: 'totTexto' }, { v: u.sum(vm.detalle.map(d => d.prev)), f: 'SUM(' + C(cP) + (d1 + 1) + ':' + C(cP) + (d2 + 1) + ')', s: 'totInt' });
-      fila.push({ v: u.sum(vm.detalle.map(d => d.cur)), f: 'SUM(' + C(cC) + (d1 + 1) + ':' + C(cC) + (d2 + 1) + ')', s: 'totInt' });
+      const rCol = c => C(c) + (d1 + 1) + ':' + C(c) + (d2 + 1);
       if (prev) {
-        const cD = ci('Variación');
-        const rD = C(cD) + (d1 + 1) + ':' + C(cD) + (d2 + 1), rP = C(cP) + (d1 + 1) + ':' + C(cP) + (d2 + 1);
-        const sD = u.sum(vm.detalle.map(d => d.d));
-        const sP = u.sum(vm.detalle.filter(d => d.d != null).map(d => d.prev));
-        fila.push({ v: sD, f: 'SUM(' + rD + ')', s: 'totDInt' });
-        fila.push({ v: sP ? sD / sP : '', f: 'IFERROR(' + C(cD) + xr + '/SUMIFS(' + rP + ',' + rD + ',"<>"),"")', s: 'totDPct' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' });
-      } else fila.push({ v: '', s: 'totTexto' });
-      S.fila(fila);
+        // como en pantalla: «Total comparable» = solo semanas con dato en las dos temporadas
+        const cD = ci('Variación'), rD = rCol(cD);
+        const xr = d2 + 2;
+        const comp = vm.detalle.filter(d => d.d != null);
+        const sD = u.sum(comp.map(d => d.d)), sP = u.sum(comp.map(d => d.prev)), sC = u.sum(comp.map(d => d.cur));
+        S.fila([{ v: 'Total comparable (sin N/A)', s: 'totTexto' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' },
+          { v: sP, f: 'SUMIFS(' + rCol(cP) + ',' + rD + ',"<>")', s: 'totInt' },
+          { v: sC, f: 'SUMIFS(' + rCol(cC) + ',' + rD + ',"<>")', s: 'totInt' },
+          { v: sD, f: 'SUM(' + rD + ')', s: 'totDInt' },
+          { v: sP ? sD / sP : '', f: 'IFERROR(' + C(cD) + xr + '/' + C(cP) + xr + ',"")', s: 'totDPct' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' }]);
+        if (comp.length < vm.detalle.length) {
+          S.fila([{ v: 'Total de cada temporada (semanas mostradas, sin N/A)', s: 'texto' }, { v: '', s: 'texto' }, { v: '', s: 'texto' },
+            { v: u.sum(vm.detalle.map(d => d.prev)), f: 'SUM(' + rCol(cP) + ')', s: 'int' },
+            { v: u.sum(vm.detalle.map(d => d.cur)), f: 'SUM(' + rCol(cC) + ')', s: 'int' }]);
+        }
+      } else {
+        S.fila([{ v: 'Total semanas mostradas (sin N/A)', s: 'totTexto' }, { v: '', s: 'totTexto' },
+          { v: u.sum(vm.detalle.map(d => d.cur)), f: 'SUM(' + rCol(cC) + ')', s: 'totInt' }, { v: '', s: 'totTexto' }]);
+      }
     }
     S.ancho(cab.map((c, i) => i === 0 ? 20 : Math.max(13, Math.min(22, String(c).length + 3))));
     S.congelar(r0 + 1, 1);
@@ -533,7 +558,7 @@
         { nombre: vm.nombreCur, nombreRef: { c: cC, r: r0 }, c: cC, r1: d1, r2: d2, color: hx(G.EXPORTAR.cur), valores: vm.detalle.map(d => d.cur) }
       ].filter(Boolean),
       formatoEje: pct ? '0%' : '#,##0', formatoCache: pct ? '0.0%' : '#,##0',
-      ancla: { c: 0, r: d2 + 3, w: Math.max(9, cab.length), h: 20 }
+      ancla: { c: 0, r: d2 + 4, w: Math.max(9, cab.length), h: 20 }
     });
 
     // --- hojas a partir de los specs (cada una con su gráfica nativa)
@@ -571,7 +596,7 @@
         const t = fnTabla(snap, !!vm.optsDe(snap).incluirCeros);
         const T = wb.hoja('Reporte ' + snap.season, { grid: false, tab: 'C9A227' });
         T.fila(['Tabla del reporte · temporada ' + snap.season + ' (idéntica a la del HTML)'], { estilo: 'titulo', alto: 26 });
-        T.fila(['Lunes de la semana 1: ' + u.fmtFecha(snap.week1) + ' · Incluir filas con todo en 0: ' + (vm.optsDe(snap).incluirCeros ? 'Sí' : 'No') + (snap.meta && snap.meta.archivo ? ' · Archivo: ' + snap.meta.archivo.nombre : '')], { estilo: 'sub' });
+        T.fila(['Lunes de la semana 1: ' + u.fmtFecha(snap.week1) + ' · Incluir filas con todo en 0: ' + (vm.optsDe(snap).incluirCeros ? 'Sí' : 'No') + notaForzada(snap, vm) + (snap.meta && snap.meta.archivo ? ' · Archivo: ' + snap.meta.archivo.nombre : '')], { estilo: 'sub' });
         T.fila([t.concilia], { estilo: 'nota' });
         T.vacia();
         const [encT, ...filasT] = t.lineas;
@@ -588,16 +613,18 @@
     // --- datos crudos (pivotables)
     const D = wb.hoja('Datos', { tab: '7F93B0' });
     const campos = Object.keys(dash.campos || {});
-    D.fila(['Temporada', 'Semana', 'Lunes', 'Tipo', ...campos.map(c => dash.campos[c])], { estilo: 'header', alto: 30 });
+    D.fila(['Temporada', 'Semana', 'Lunes', 'Tipo', ...campos.map(c => dash.campos[c]), 'Nota'], { estilo: 'header', alto: 30 });
     [cur, prev].filter(Boolean).forEach(s => {
+      const filaDatos = (w, lunes, b, t, nota) => D.fila([{ v: String(s.season), s: 'texto' }, w === 'N/A' ? { v: 'N/A', s: 'texto' } : { v: w, s: 'int' }, { v: lunes, s: 'texto' }, { v: t, s: 'texto' },
+        ...campos.map(c => ({ v: +(b[t][c] || 0), s: 'int' })), { v: nota, s: 'texto' }]);
       M.semanasDe(s).forEach(w => {
         const b = s.weeks[w] || {};
-        Object.keys(b).sort().forEach(t => {
-          D.fila([{ v: String(s.season), s: 'texto' }, { v: w, s: 'int' }, { v: u.weekMonday(s.week1, w), s: 'texto' }, { v: t, s: 'texto' }, ...campos.map(c => ({ v: +(b[t][c] || 0), s: 'int' }))]);
-        });
+        const nota = w > M.MAX_SEMANA ? 'Fuera de rango (fecha fuera de la temporada; no se grafica)' : '';
+        Object.keys(b).sort().forEach(t => filaDatos(w, u.weekMonday(s.week1, w), b, t, nota));
       });
+      Object.keys(s.na || {}).sort().forEach(t => filaDatos('N/A', '', s.na, t, 'N/A: antes del lunes de la semana 1 o sin fecha válida'));
     });
-    D.ancho([12, 9, 12, 28, ...campos.map(() => 18)]);
+    D.ancho([12, 9, 12, 28, ...campos.map(() => 18), 44]);
     D.congelar(1, 0);
 
     const blob = await wb.blob();
@@ -731,7 +758,8 @@
     // ---------- filtros
     const filtros = el('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filtros del dashboard' });
     const resumenFiltro = el('div', { class: 'filters-sum' });
-    raiz.appendChild(el('div', { class: 'filters-wrap' }, filtros, resumenFiltro));
+    raiz.appendChild(el('div', { class: 'filters-wrap' }, filtros));
+    raiz.appendChild(resumenFiltro);
 
     // ---------- KPIs
     const kpiCaja = el('div', { class: 'kpis' });
@@ -831,6 +859,7 @@
 
       (dash.opciones || []).forEach(o => {
         const cb = el('input', { type: 'checkbox', role: 'switch', checked: !!vm.opts[o.id] });
+        if (!(o.id in vm.override) && (vm.opcionesDistintas || []).includes(o)) cb.indeterminate = true;
         cb.addEventListener('change', () => { e.opciones = Object.assign({}, e.opciones, { [o.id]: cb.checked }); cambio(); });
         filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Opciones'), el('label', { class: 'switch', title: o.ayuda || '' }, cb, el('span', { class: 'sw' }), el('span', null, o.etiqueta))));
       });
@@ -845,7 +874,11 @@
         el('span', { class: 'chip' }, vm.comparando),
         vm.tiposSel ? el('span', { class: 'chip' }, vm.filtroTipos) : null,
         ...avisoOpc, ...forzadas,
-        vm.fueraCur ? el('span', { class: 'chip chip-warn', title: 'Hay filas con fechas que caen en semanas mayores a ' + M.MAX_SEMANA + ' (probablemente un año mal capturado). No se grafican; aparecen en la «Tabla del reporte».' }, vm.fueraCur + ' semana(s) fuera de rango en ' + vm.cur.season) : null,
+        ...[[vm.cur, vm.fueraCur, vm.fueraCurV], [vm.prev, vm.fueraPrev, vm.fueraPrevV]].filter(x => x[0] && x[1]).map(([s, n, v]) =>
+          el('span', { class: 'chip chip-warn', title: 'Hay filas con fechas que caen en semanas mayores a ' + M.MAX_SEMANA + ' (probablemente un año mal capturado). No se grafican; aparecen en la «Tabla del reporte».' },
+            n + ' semana(s) fuera de rango en ' + s.season + (v ? ' (' + G.fmtValor(v, vm.fmtM) + ')' : ''))),
+        vm.prev && vm.prev.week1 && vm.prev.week1 === vm.cur.week1 ? el('span', { class: 'chip chip-warn', title: 'Las dos temporadas tienen el mismo lunes de semana 1: probablemente son la misma temporada guardada con dos etiquetas. Borra una en «Base de datos».' },
+          'Misma temporada: ' + vm.cur.season + ' y ' + vm.prev.season + ' tienen el mismo lunes') : null,
         btnReset,
         vm.parcial ? el('span', { class: 'chip chip-warn', title: 'La última semana con datos todavía no termina' }, '* S' + vm.parcial.semana + ' parcial · datos al ' + u.fmtFecha(vm.parcial.corte)) : null].filter(Boolean));
     }
@@ -1071,7 +1104,7 @@
       const tb = el('tbody');
       filas.forEach((f, k) => {
         const total = k === filas.length - 1;
-        tb.appendChild(el('tr', { class: total ? 'tot' : f[0] === 'N/A' ? 'na' : '' }, f.map((c, i) => el('td', { class: i > 1 ? 'num' : '' }, i > 1 ? u.fmtInt(c) : String(c)))));
+        tb.appendChild(el('tr', { class: total ? 'tot' : f[0] === 'N/A' ? 'na' : '' }, f.map((c, i) => el('td', { class: i > 1 ? 'num' : '' }, String(c)))));
       });
       tabla.appendChild(tb);
       cRep.replaceChildren(
@@ -1082,7 +1115,7 @@
           el('div', { class: 'card-hr' }, ctrl, btnCopiar)),
         el('p', { class: 'rep-meta' },
           'Lunes de la semana 1: ', el('strong', null, u.fmtFecha(snap.week1)),
-          ' · «Incluir filas con todo en 0»: ', el('strong', null, incluir ? 'Sí' : 'No'),
+          ' · «Incluir filas con todo en 0»: ', el('strong', null, incluir ? 'Sí' : 'No'), notaForzada(snap, vm),
           m.archivo && m.archivo.nombre ? ' · Archivo: ' + m.archivo.nombre + (m.archivo.hoja ? ' (hoja ' + m.archivo.hoja + ')' : '') : '',
           m.procesado ? ' · Procesado: ' + u.fmtFechaHora(m.procesado) : '',
           snap.demo ? ' · DATOS DE DEMOSTRACIÓN' : ''),

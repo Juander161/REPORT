@@ -193,7 +193,7 @@
           const b = u.$('#banners');
           if (u.$('#bannerUpd')) return;
           b.appendChild(el('div', { class: 'banner banner-upd', id: 'bannerUpd' },
-            el('span', null, el('strong', null, 'Nueva versión disponible. '), 'Actualiza para obtener las últimas mejoras.'),
+            el('span', null, el('strong', null, 'Nueva versión disponible. '), 'Actualiza antes de procesar archivos: puede traer correcciones en los cálculos.'),
             el('button', { class: 'btn sm primary', type: 'button', onclick: () => { actualizando = true; w.postMessage({ tipo: 'activar' }); } }, 'Actualizar ahora')));
         };
         if (reg0.waiting && navigator.serviceWorker.controller) avisar(reg0.waiting);

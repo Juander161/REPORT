@@ -114,6 +114,13 @@
         dd != null ? el('span', { class: 'delta ' + (dd > 0 ? 'up' : dd < 0 ? 'down' : 'flat') }, u.fmtPp(dd)) : el('span')));
     }
     card.appendChild(filas);
+    // cada temporada se calcula con la opción con que se procesó: si difieren, la variación mezcla criterios
+    const distintas = prev ? (dash.opciones || []).filter(o => opts[o.id] !== optsP[o.id]) : [];
+    if (distintas.length) {
+      card.appendChild(el('p', { class: 'pano-warn', title: 'Ábrelo en el dashboard y usa el interruptor para calcular las dos temporadas con la misma opción.' },
+        '⚠ ' + distintas.map(o => '«' + o.etiqueta + '»: ' + cur.season + ' = ' + (opts[o.id] ? 'Sí' : 'No') + ', ' + prev.season + ' = ' + (optsP[o.id] ? 'Sí' : 'No')).join(' · ') +
+        '. La variación compara criterios distintos.'));
+    }
     card.appendChild(el('footer', { class: 'pano-f' },
       el('span', { class: 'muted small' }, cur.demo ? 'Datos de demostración' : 'Actualizado ' + u.fmtFechaHora((cur.meta && cur.meta.procesado) || cur.updatedAt)),
       el('a', { class: 'btn primary sm', href: '#/dash/' + dash.id }, 'Abrir dashboard →')));
