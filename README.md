@@ -220,6 +220,21 @@ data/                    base compartida opcional (REPORT_DB.xlsx)
 icons/                   íconos de la app
 ```
 
+## GOWNS (cantidades u órdenes por producto)
+
+`reportes/gowns.html` es dinámico: eliges la **columna de fecha** (semanas), la **columna de tipo**
+con los **tipos a incluir** (por defecto `GREG, COLL`), los **productos** (cualquier columna de
+cantidad) y las **medidas**: *cantidades* (suma) u *órdenes* (filas con cantidad > 0). Por cada
+producto y medida se guarda un reporte `PRODUCTO_temporada_sum` o `PRODUCTO_temporada_count`
+(p. ej. `GOWN_2026_sum`); el dashboard GOWNS tiene el filtro «Producto y medida» y el resto
+(comparativo, proyección, Excel, base compartida) funciona igual que en los otros reportes.
+Se comprobó contra un cálculo independiente (4 vistas, con N/A, tipos en minúsculas y cantidades
+con coma). Para otro reporte con productos distintos basta con elegir otras columnas.
+
+**N/A antes de la semana 1:** en todos los reportes, las filas con fecha anterior al lunes de la
+semana 1 (o sin fecha legible) se muestran primero, antes de la semana 1. Es el único cambio de
+presentación respecto a los HTML originales (que lo mostraban al final); los números no cambian.
+
 ## Proyección de temporada
 
 La vista **Proyección de temporada** estima el cierre de la temporada actual con las

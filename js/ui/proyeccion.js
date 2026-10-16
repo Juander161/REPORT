@@ -47,8 +47,13 @@
       const dashes = RH.registro.dashboards.filter(d => d.estado !== 'pendiente' && (d.metricas || []).length &&
         snaps.some(s => s.dataset === d.dataset));
       if (!dashes.length) return null;
-      const dash = dashes.find(d => d.id === e.dash) || dashes[0];
-      const temps = M.temporadas(snaps, dash.dataset);
+      const dashBase = dashes.find(d => d.id === e.dash) || dashes[0];
+      // GOWNS: cada producto y medida (cantidades u órdenes) es una serie distinta
+      const variantes = dashBase.variantes ? M.variantes(snaps, dashBase.dataset) : [];
+      const vSel = variantes.find(x => x.clave === e.variante) || variantes[0];
+      const clave = vSel ? vSel.clave : null;
+      const dash = M.dashPara(dashBase, clave);
+      const temps = M.temporadas(snaps, dash.dataset, clave);
       const cur = temps.find(s => s.id === e.cur) || temps[0];
       const posibles = temps.filter(s => s.id !== cur.id && (s.week1 || '') < (cur.week1 || ''));
       const elegidas = Array.isArray(e.bases) ? posibles.filter(s => e.bases.includes(s.id)) : posibles;
@@ -62,7 +67,7 @@
       const parcial = M.semanaParcial(cur);
       const kDef = parcial ? parcial.semana - 1 : Lc;
       const k = Math.max(1, Math.min(Lc, e.k || kDef || 1));
-      return { dashes, dash, temps, cur, posibles, bases: elegidas, medidas, med, tiposTodos, tipos, excl, optsDe, Lc, parcial, kDef, k };
+      return { dashes, dash, variantes, clave, temps, cur, posibles, bases: elegidas, medidas, med, tiposTodos, tipos, excl, optsDe, Lc, parcial, kDef, k };
     }
 
     // ------------------------------------------------------------ controles
@@ -76,6 +81,7 @@
     function pintarControles(c) {
       filtros.replaceChildren();
       filtros.appendChild(campo('Reporte', sel(c.dashes.map(d => [d.id, d.titulo]), c.dash.id, v => { e = { dash: v }; cambio(); }, 'Reporte')));
+      if (c.variantes.length) filtros.appendChild(campo('Producto y medida', sel(c.variantes.map(x => [x.clave, x.etiqueta]), c.clave, v => { e.variante = v; e.cur = null; e.bases = null; e.k = null; e.medida = null; cambio(); }, 'Producto y medida')));
       filtros.appendChild(campo('Qué proyectar', sel(c.medidas.map(m => [m.id, m.etiqueta]), c.med.id, v => { e.medida = v; cambio(); }, 'Métrica')));
       filtros.appendChild(campo('Temporada a proyectar', sel(c.temps.map(s => [s.id, s.season + (s.demo ? ' (demo)' : '')]), c.cur.id, v => { e.cur = v; e.bases = null; e.k = null; cambio(); }, 'Temporada')));
 

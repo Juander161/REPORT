@@ -127,3 +127,10 @@ tr.total td { font-weight: 700; background: var(--surface-3) !important; border-
 .usado:empty { display: none; }
 .aviso { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn); font-weight: 600; font-size: 13px; }
 .fld-hoja { margin-top: 12px; max-width: 380px; }
+
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 14px; max-height: 220px; overflow: auto; padding: 4px 2px; }
+.checks .check { margin-top: 6px; }
+.concilia { font-size: 12.5px; color: var(--text-2); margin: 10px 0; }
+.table-wrap tr.na td { background: var(--surface-3, #eef2f7); font-style: italic; }
+.table-wrap tr.tot td { font-weight: 700; border-top: 2px solid var(--border-2, #c3c8d1); }
+.checks.anchos { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-height: none; overflow: visible; }

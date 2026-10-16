@@ -211,7 +211,7 @@ function render() {
   const incluir = $("incluirCeros").checked;
   const listaTipos = [...tipos].sort();
   const semanas = [...datos.keys()].filter(k => k !== "N/A").sort((a, b) => a - b);
-  if (datos.has("N/A")) semanas.push("N/A");
+  if (datos.has("N/A")) semanas.unshift("N/A");   // lo previo a la semana 1 va primero
 
   const enc = ["Semana", "Inicio (lunes)"];
   listaTipos.forEach(t => enc.push(t + " Tassels Only"));

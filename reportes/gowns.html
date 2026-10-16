@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gowns por semana · Report Hub</title>
+<link rel="icon" href="../icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="reporte.css">
+<script>try { var t = JSON.parse(localStorage.getItem('rh-tema') || '"auto"'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+</head>
+<body>
+<div class="rp">
+  <header class="rp-head">
+    <div>
+      <div class="eyebrow">Reporte · GOWNS</div>
+      <h1>Gowns por semana</h1>
+      <p>Elige qué columna es la fecha, cuál es el tipo (GREG, COLL…) y qué productos procesar. Por cada producto se guarda un reporte de <strong>cantidades</strong> (suma de la columna) y/o de <strong>órdenes</strong> (filas con cantidad &gt; 0), con las semanas contadas desde el lunes de la semana 1. Lo anterior a la semana 1 (o sin fecha) queda en <strong>N/A</strong>, antes de la semana 1.</p>
+    </div>
+    <a class="btn ghost solo-suelto" href="../index.html">← Ir al panel</a>
+  </header>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">1</span> Archivo CSV o Excel</h2>
+    <label class="drop" id="zona">
+      <span class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Arrastra aquí el CSV o el Excel (.xlsx) o haz clic para elegirlo</strong><small id="archivoInfo">Se procesa en tu computadora.</small></span>
+      <input type="file" id="archivo" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    </label>
+    <label class="fld fld-hoja" id="hojaWrap" hidden>Hoja del libro de Excel <select id="hoja"></select></label>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">2</span> Columnas y criterios</h2>
+    <div class="form-grid">
+      <label class="fld">Lunes de la Semana 1 <input type="date" id="inicio" value="2025-06-30"><span class="hint" id="inicioInfo"></span></label>
+      <label class="fld">Temporada <input id="temporada" placeholder="p. ej. 2026"></label>
+      <label class="fld">Formato de fecha (si la fecha es texto)
+        <select id="fmt"><option value="MDY">Mes/Día/Año</option><option value="DMY">Día/Mes/Año</option></select>
+      </label>
+      <label class="fld">Columna de fecha (define las semanas) <select id="colFecha"><option value="">— elige un archivo —</option></select></label>
+      <label class="fld">Columna de tipo <select id="colTipo"><option value="">— elige un archivo —</option></select></label>
+      <label class="fld">Tipos a incluir <input id="tipos" value="GREG, COLL"><span class="hint">Separados por coma. Las filas de otros tipos se ignoran. Déjalo vacío para incluir todos.</span></label>
+    </div>
+
+    <div class="fld" style="margin-top:14px">Productos a procesar <span class="hint">Un reporte por cada producto marcado. Marca todas las columnas de cantidad que quieras.</span>
+      <div class="checks" id="productos"><span class="muted">Elige un archivo para ver sus columnas.</span></div>
+    </div>
+    <div class="fld" style="margin-top:14px">Medidas
+      <div class="checks anchos" id="modos">
+        <label class="check"><input type="checkbox" value="sum" checked> Cantidades (suma de la columna) → <code>producto_temporada_sum</code></label>
+        <label class="check"><input type="checkbox" value="count" checked> Órdenes (filas con cantidad &gt; 0) → <code>producto_temporada_count</code></label>
+      </div>
+    </div>
+    <div class="inline">Temporadas ya guardadas: <span class="chips" id="temporadas"></span></div>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">3</span> Procesar</h2>
+    <div class="actions">
+      <button id="go" class="btn primary lg" type="button">Procesar</button>
+      <button id="copiar" class="btn" type="button" disabled>Copiar tabla (para pegar en Excel)</button>
+    </div>
+    <div class="progress" id="progreso" hidden><div></div></div>
+    <div id="estado"></div>
+    <div id="aviso" class="aviso" hidden></div>
+    <div id="usado" class="usado"></div>
+  </section>
+
+  <section class="card save" id="panelGuardar" hidden></section>
+
+  <section class="card" id="resultados" hidden>
+    <div class="actions"><label class="fld" style="margin:0">Ver <select id="ver"></select></label></div>
+    <p class="concilia" id="concilia"></p>
+    <div id="salida" class="table-wrap"></div>
+  </section>
+</div>
+
+<script src="../js/core/util.js"></script>
+<script src="../js/core/store.js"></script>
+<script src="../js/core/excel-filas.js"></script>
+<script src="../js/core/csv.js"></script>
+<script src="../js/registry.js"></script>
+<script src="../js/core/tablas.js"></script>
+<script src="../js/puente.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = RH.util.esc;
+const DATASET = 'gowns';
+const MODOS = { sum: 'cantidades', count: 'órdenes' };
+
+let encabezado = [];      // encabezados del archivo, en mayúsculas
+let resultados = new Map();   // "PRODUCTO|modo" -> snapshot (sin id definitivo)
+let ultimo = null;        // configuración del último proceso (para guardar)
+let procesando = false, cambioDurante = false;
+let tsv = '';
+
+// ---------- nombres: GOWN QTY -> GOWN ; "CAP SIZE QTY" -> CAP_SIZE
+const limpio = col => col.replace(/\s+QTY$/i, '').trim().replace(/\s+/g, '_');
+const etiquetaTemporada = () => $('temporada').value.trim().replace(/\s+/g, '_');
+
+// ---------- selección de columnas
+function llenarSelect(sel, cols, preferidas) {
+  const previa = sel.dataset.archivo === sel.dataset.actual ? sel.value : '';
+  sel.replaceChildren(...cols.map(c => new Option(c || '(sin nombre)', c)));
+  const pref = preferidas.map(re => cols.find(c => re.test(c))).find(Boolean);
+  sel.value = cols.includes(previa) ? previa : (pref || cols[0] || '');
+}
+
+function pintarProductos() {
+  const cont = $('productos');
+  const excluir = new Set([$('colFecha').value, $('colTipo').value]);
+  const prev = new Set([...cont.querySelectorAll('input:checked')].map(i => i.value));
+  const habiaLista = cont.querySelector('input');
+  const cols = encabezado.filter(c => c && !excluir.has(c));
+  if (!cols.length) { cont.innerHTML = '<span class="muted">Elige un archivo para ver sus columnas.</span>'; return; }
+  cont.replaceChildren(...cols.map(c => {
+    const marcado = habiaLista ? prev.has(c) : /\sQTY$/.test(c);
+    const l = document.createElement('label'); l.className = 'check';
+    l.innerHTML = '<input type="checkbox" value="' + esc(c) + '"' + (marcado ? ' checked' : '') + '> ' + esc(c);
+    return l;
+  }));
+}
+
+async function alElegirArchivo() {
+  const f = $('archivo').files[0];
+  $('hojaWrap').hidden = true;
+  if (!f) return;
+  try {
+    const cols = RH.puente.esExcel(f)
+      ? (await RH.puente.prepararExcel(f, $('hoja'), $('hojaWrap'))).map(c => String(c).replace(/^﻿/, '').trim().toUpperCase())
+      : await RH.csv.encabezados(f);
+    encabezado = cols;
+    const clave = [f.name, f.size, f.lastModified, $('hoja').value].join('|');
+    for (const sel of [$('colFecha'), $('colTipo')]) sel.dataset.actual = clave;
+    llenarSelect($('colFecha'), cols, [/^IMPORTED$/, /FECHA|DATE|IMPORTED/]);
+    llenarSelect($('colTipo'), cols, [/^ASSIGNMENT TYPE$/, /TYPE|TIPO/]);
+    $('colFecha').dataset.archivo = $('colTipo').dataset.archivo = clave;
+    $('productos').innerHTML = '';
+    pintarProductos();
+    $('estado').textContent = '';
+  } catch (e) {
+    $('estado').textContent = 'No pude leer el encabezado: ' + e.message;
+  }
+}
+$('archivo').addEventListener('change', alElegirArchivo);
+$('hoja').addEventListener('change', alElegirArchivo);
+$('colFecha').addEventListener('change', pintarProductos);
+$('colTipo').addEventListener('change', pintarProductos);
+
+// ---------- procesamiento
+// si la configuración cambia MIENTRAS se procesa, el resultado no se puede guardar
+async function procesar() {
+  procesando = true; cambioDurante = false;
+  try { await procesarArchivo(); } finally { procesando = false; }
+}
+
+async function procesarArchivo() {
+  const file = $('archivo').files[0];
+  if (!file) { alert('Selecciona el archivo CSV o Excel'); return; }
+  const fmt = $('fmt').value, inicio = Date.parse($('inicio').value), inicioIso = $('inicio').value;
+  const colFecha = $('colFecha').value, colTipo = $('colTipo').value;
+  const productos = [...$('productos').querySelectorAll('input:checked')].map(i => i.value);
+  const modos = [...$('modos').querySelectorAll('input:checked')].map(i => i.value);
+  const listaTipos = $('tipos').value.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+  const tiposOk = listaTipos.length ? new Set(listaTipos) : null;
+  if (!colFecha || !colTipo) { $('estado').textContent = 'Elige la columna de fecha y la de tipo.'; return; }
+  if (!productos.length) { $('estado').textContent = 'Marca al menos un producto.'; return; }
+  if (!modos.length) { $('estado').textContent = 'Marca al menos una medida (cantidades u órdenes).'; return; }
+  if (!(inicio > 0)) { $('estado').textContent = 'Escribe el lunes de la semana 1.'; return; }
+
+  // por producto y medida: Map(semana -> Map(tipo -> {v}))
+  const acc = new Map();
+  productos.forEach(p => modos.forEach(m => acc.set(p + '|' + m, new Map())));
+  const tiposVistos = new Set();
+  let filas = 0, incluidas = 0, otros = 0, antesDeInicio = 0, fechasMalas = 0;
+  const idx = {};
+  resultados = new Map(); ultimo = null;
+  $('go').disabled = true; $('progreso').hidden = false; $('aviso').hidden = true; $('usado').textContent = '';
+  $('resultados').hidden = true; $('copiar').disabled = true; guardarUI.ocultar();
+  $('estado').textContent = 'Procesando...';
+  const hoja = RH.puente.esExcel(file) ? $('hoja').value : null;
+  let avisoExcel = null;
+
+  try {
+    const r = await RH.csv.leer(file, {
+      hoja, columnasFecha: [colFecha],
+      alEncabezado(h) {
+        idx.fecha = h.indexOf(colFecha); idx.tipo = h.indexOf(colTipo);
+        if (idx.fecha < 0 || idx.tipo < 0) throw new Error('No encontré la columna de fecha o de tipo.');
+        idx.prod = productos.map(p => { const i = h.indexOf(p); if (i < 0) throw new Error('No encontré la columna ' + p); return i; });
+      },
+      alFila(row) {
+        filas++;
+        const tipo = (row[idx.tipo] || '').trim().toUpperCase();
+        if (tiposOk && !tiposOk.has(tipo)) { otros++; return; }
+        incluidas++;
+        const { semana, motivo } = RH.csv.semana(row[idx.fecha], inicio, fmt);
+        if (motivo === 'sin-fecha') fechasMalas++; else if (motivo === 'antes') antesDeInicio++;
+        const clave = tipo || '(VACÍO)';
+        tiposVistos.add(clave);
+        productos.forEach((p, k) => {
+          const v = RH.csv.num(row[idx.prod[k]]);
+          modos.forEach(m => {
+            const dato = m === 'sum' ? v : (v > 0 ? 1 : 0);
+            const mapa = acc.get(p + '|' + m);
+            if (!mapa.has(semana)) mapa.set(semana, new Map());
+            const mt = mapa.get(semana);
+            if (!mt.has(clave)) mt.set(clave, { v: 0 });
+            mt.get(clave).v += dato;
+          });
+        });
+      },
+      alProgreso(leidos, total, n) {
+        $('estado').textContent = 'Procesando... ' + (leidos / 1048576).toFixed(0) + ' MB de ' + (total / 1048576).toFixed(0) + ' MB (' + n.toLocaleString() + ' filas)';
+        $('progreso').firstElementChild.style.width = (total ? Math.min(100, leidos / total * 100) : 100).toFixed(1) + '%';
+      }
+    });
+    avisoExcel = r.aviso || null;
+  } catch (e) {
+    $('estado').textContent = 'Error: ' + e.message;
+    $('go').disabled = false; $('progreso').hidden = true;
+    return;
+  }
+
+  // snapshots por producto y medida (sin id: se arma al guardar con la temporada)
+  const config = { colFecha, colTipo, tipos: listaTipos, fmt };
+  acc.forEach((mapa, clave) => {
+    const [p, m] = clave.split('|');
+    const base = RH.puente.desdeMapa(mapa, ['v']);
+    resultados.set(clave, Object.assign(base, {
+      dataset: DATASET, week1: inicioIso,
+      meta: { reporte: DATASET, producto: limpio(p), columnaProducto: p, modo: m, archivo: RH.puente.metaArchivo(file, hoja), filas: incluidas, fechasMalas, antesDeInicio, tipos: [...tiposVistos].sort(), config }
+    }));
+  });
+  const resultado = { inicioIso, config, archivo: RH.puente.metaArchivo(file, hoja), filas, incluidas, fechasMalas, antesDeInicio, productos, modos };
+  $('estado').textContent = 'Listo. Filas leídas: ' + filas.toLocaleString() + ' | Con los tipos elegidos: ' + incluidas.toLocaleString() +
+    (otros ? ' | Otros tipos ignorados: ' + otros.toLocaleString() : '') +
+    ' | En N/A: ' + (antesDeInicio + fechasMalas).toLocaleString() + ' (anteriores al inicio: ' + antesDeInicio.toLocaleString() + ', sin fecha válida: ' + fechasMalas.toLocaleString() + ')';
+  $('go').disabled = false; $('progreso').firstElementChild.style.width = '100%';
+  pintarSelector(); pintarTabla();
+  $('usado').textContent = 'Calculado con: Lunes de la Semana 1 = ' + inicioIso + ' · Fecha: ' + colFecha + ' · Tipo: ' + colTipo + ' = ' + (listaTipos.length ? listaTipos.join(', ') : 'todos') +
+    ' · Archivo: ' + file.name + (hoja ? ' (hoja ' + hoja + ')' : '');
+  if (cambioDurante) { $('aviso').hidden = false; $('aviso').textContent = 'La configuración cambió mientras se procesaba: pulsa «Procesar» otra vez antes de guardar.'; return; }
+  ultimo = resultado;
+  const semanasNum = [...new Set([...acc.values()].flatMap(m => [...m.keys()]))].filter(k => k !== 'N/A');
+  const avisos = RH.puente.avisosResultado({ base: incluidas, antesDeInicio, fechasMalas, maxSemana: Math.max(0, ...semanasNum), maxEnRango: RH.puente.ultimaSemana(semanasNum) });
+  if (avisoExcel) avisos.unshift(avisoExcel);
+  $('aviso').hidden = !avisos.length;
+  $('aviso').textContent = avisos.length ? '⚠ ' + avisos.join(' ') + ' (Lunes usado: ' + RH.util.fmtFecha(inicioIso) + ')' : '';
+  guardarUI.mostrar(resumenGuardar());
+}
+
+function resumenGuardar() {
+  const n = ultimo.productos.length * ultimo.modos.length;
+  return 'Temporada ' + ($('temporada').value || '(sin etiqueta)') + ' · Semana 1 = ' + RH.util.fmtFecha(ultimo.inicioIso) + ' · ' + n + ' reporte' + (n === 1 ? '' : 's') +
+    ' (' + ultimo.productos.map(limpio).join(', ') + ' × ' + ultimo.modos.map(m => MODOS[m]).join(' y ') + ') · ' + ultimo.incluidas.toLocaleString() + ' filas.';
+}
+
+// ---------- tabla en pantalla (la misma que reconstruye el dashboard)
+function pintarSelector() {
+  const sel = $('ver'), previo = sel.value;
+  sel.replaceChildren(...[...resultados.keys()].map(k => { const [p, m] = k.split('|'); return new Option(limpio(p) + ' · ' + MODOS[m], k); }));
+  if (resultados.has(previo)) sel.value = previo;
+}
+function pintarTabla() {
+  const snap = resultados.get($('ver').value);
+  if (!snap) return;
+  const t = RH.tablas.gowns(snap);
+  const [enc, ...filas] = t.lineas;
+  tsv = t.tsv;
+  $('concilia').textContent = t.concilia;
+  $('salida').innerHTML = '<table><tr>' + enc.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>' +
+    filas.map((f, k) => '<tr' + (k === filas.length - 1 ? ' class="tot"' : f[0] === 'N/A' ? ' class="na"' : '') + '>' + f.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+  $('resultados').hidden = false;
+  $('copiar').disabled = false;
+}
+$('ver').addEventListener('change', pintarTabla);
+
+// ---------- guardar: un reporte por producto y medida, nombrado producto_temporada_sum|count
+const guardarUI = RH.puente.panelGuardar({
+  contenedor: $('panelGuardar'),
+  dataset: DATASET,
+  construir() {
+    if (!ultimo) throw new Error('Primero procesa un archivo.');
+    const temp = etiquetaTemporada();
+    return [...resultados.values()].map(s => {
+      const nombre = s.meta.producto + '_' + temp + '_' + s.meta.modo;
+      return Object.assign({}, s, {
+        id: RH.store.idDe(DATASET, nombre), season: nombre,
+        meta: Object.assign({}, s.meta, { temporada: $('temporada').value.trim() })
+      });
+    }).map(s => (temp ? s : Object.assign(s, { season: '' })));
+  },
+  validar(snap) {
+    const avisos = [];
+    if (new Date(snap.week1 + 'T00:00:00Z').getUTCDay() !== 1) avisos.push('El lunes de la semana 1 (' + snap.week1 + ') no es lunes.');
+    avisos.push(...RH.puente.avisoSemanas(snap));
+    return avisos.length ? avisos.join(' ') : null;
+  }
+});
+
+$('go').onclick = procesar;
+$('copiar').onclick = async () => { await RH.util.copiarTexto(tsv); RH.util.toast('Tabla copiada.', { tipo: 'ok' }); };
+$('temporada').addEventListener('input', () => { if (ultimo) guardarUI.mostrar(resumenGuardar()); });
+RH.puente.zonaArchivo($('zona'), $('archivo'), $('archivoInfo'));
+RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
+// si cambia algo que afecta el cálculo después de procesar, el resultado ya no se puede guardar
+RH.puente.invalidarAlCambiar([$('archivo'), $('hoja'), $('inicio'), $('fmt'), $('colFecha'), $('colTipo'), $('tipos'), $('productos'), $('modos')], () => {
+  if (procesando) { cambioDurante = true; return; }
+  if (!ultimo) return;
+  ultimo = null;
+  guardarUI.ocultar();
+  $('aviso').hidden = false;
+  $('aviso').textContent = 'La configuración cambió: pulsa «Procesar» otra vez antes de guardar en el dashboard.';
+});
+// temporadas ya guardadas: una por producto/medida; los chips muestran la etiqueta de temporada
+RH.puente.actualizarTemporadas({ dataset: DATASET, chips: $('temporadas'), temporadaInput: $('temporada'), inicioInput: $('inicio') });
+</script>
+</body>
+</html>
