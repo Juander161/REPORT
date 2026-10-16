@@ -15,7 +15,7 @@
   const conCeros = (c, o) => (c.to || 0) + (o.incluirCeros ? (c.ceros || 0) : 0);
 
   RH.registro = {
-    app: { nombre: 'Report Hub', version: '1.3.0' },
+    app: { nombre: 'Report Hub', version: '1.4.0' },
 
     dashboards: [
       {
@@ -42,12 +42,13 @@
         titulo: 'GOWNS',
         dataset: 'gowns',
         reporte: 'gowns',
-        estado: 'pendiente',   // cambia a 'activo' cuando se conecte el reporte
-        descripcion: 'Tablero reservado para el reporte de Gowns. Se activa en cuanto se integre su archivo.',
-        campos: {},
+        estado: 'activo',
+        variantes: true,   // cada reporte guardado es un producto + medida (cantidades u órdenes)
+        descripcion: 'Cantidades u órdenes por producto, por semana y por tipo (GREG, COLL…). Elige el producto y la medida en el filtro.',
+        campos: { v: 'Valor' },
         opciones: [],
-        metricas: [],
-        principal: null
+        metricas: [{ id: 'valor', etiqueta: 'Cantidad', unidad: 'unidades', num: c => c.v || 0 }],
+        principal: 'valor'
       },
       {
         id: 'homeship',
@@ -83,10 +84,9 @@
       {
         id: 'gowns',
         titulo: 'Gowns',
-        archivo: null,          // ← aquí va 'reportes/gowns.html' cuando esté listo
+        archivo: 'reportes/gowns.html',
         dashboard: 'gowns',
-        estado: 'pendiente',
-        descripcion: 'Espacio reservado para el tercer reporte.'
+        descripcion: 'Elige la columna de fecha, la de tipo (GREG, COLL…) y los productos: guarda un reporte por producto, en cantidades (suma) u órdenes (conteo).'
       },
       {
         id: 'homeship',

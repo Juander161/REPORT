@@ -35,7 +35,7 @@
     const { datos, tipos } = mapa(snap);
     const listaTipos = [...tipos].sort();
     const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
-    if (datos.has('N/A')) semanas.push('N/A');
+    if (datos.has('N/A')) semanas.unshift('N/A');   // lo previo a la semana 1 va primero
     const enc = ['Semana', 'Inicio (lunes)'];
     listaTipos.forEach(t => enc.push(t + ' Tassels Only'));
     enc.push('Total Tassels Only', 'Órdenes totales');
@@ -75,7 +75,7 @@
     const P = (snap.meta && snap.meta.config && snap.meta.config.palabra) || 'HOMESHIP';
     const listaTipos = [...tipos].sort();
     const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
-    if (datos.has('N/A')) semanas.push('N/A');
+    if (datos.has('N/A')) semanas.unshift('N/A');   // lo previo a la semana 1 va primero
     const enc = ['Semana', 'Inicio (lunes)'];
     listaTipos.forEach(t => enc.push(t + ' ' + P, t + ' Tassels Only', t + ' Resta'));
     enc.push('Total ' + P, 'Total Tassels Only', 'Total Resta');
@@ -114,5 +114,38 @@
     };
   }
 
-  RH.tablas = { 'tassel-only': tasselOnly, homeship, mapa };
+  // ---- GOWNS: una columna por tipo (GREG, COLL…), valores = cantidades (sum) u órdenes (count)
+  function gowns(snap) {
+    const { datos, tipos } = mapa(snap);
+    const m = snap.meta || {};
+    const listaTipos = [...tipos].sort();
+    const semanas = [...datos.keys()].filter(k => k !== 'N/A').sort((a, b) => a - b);
+    if (datos.has('N/A')) semanas.unshift('N/A');
+    const etiqueta = (m.producto || 'Producto') + (m.modo === 'count' ? ' · órdenes' : ' · cantidades');
+    const enc = ['Semana', 'Inicio (lunes)'];
+    listaTipos.forEach(t => enc.push(t + ' ' + etiqueta));
+    enc.push('Total ' + etiqueta);
+    const lineas = [enc];
+    const acum = new Array(listaTipos.length + 1).fill(0);
+    let totNA = 0;
+    for (const w of semanas) {
+      const mt = datos.get(w);
+      const r = [w === 'N/A' ? 'N/A' : 'Semana ' + w, lunesDe(snap, w)];
+      let tot = 0;
+      listaTipos.forEach((t, i) => { const v = ((mt.get(t) || {}).v) || 0; r.push(v); tot += v; acum[i] += v; });
+      r.push(tot); acum[listaTipos.length] += tot;
+      if (w === 'N/A') totNA = tot;
+      lineas.push(r);
+    }
+    lineas.push(['TOTAL', '', ...acum]);
+    const total = acum[listaTipos.length];
+    return {
+      lineas,
+      tsv: lineas.map(l => l.join('\t')).join('\n'),
+      concilia: etiqueta + ' · total del archivo: ' + total.toLocaleString() + ' | en semanas: ' + (total - totNA).toLocaleString() +
+        ' | N/A (antes de la semana 1 o sin fecha válida): ' + totNA.toLocaleString() + (m.tipos && m.tipos.length ? ' | tipos incluidos: ' + m.tipos.join(', ') : '')
+    };
+  }
+
+  RH.tablas = { 'tassel-only': tasselOnly, homeship, gowns, mapa };
 })(window.RH = window.RH || {});

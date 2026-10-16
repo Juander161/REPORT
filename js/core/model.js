@@ -36,10 +36,44 @@
       return M.semanasDe(snap).filter(w => w > MAX_SEMANA);
     },
 
-    /** Temporadas de un dataset ordenadas de la más reciente a la más antigua */
-    temporadas(snaps, dataset) {
-      return snaps.filter(s => s.dataset === dataset)
-        .sort((a, b) => (b.week1 || '').localeCompare(a.week1 || '') || String(b.season).localeCompare(String(a.season)));
+    /**
+     * Temporadas de un dataset ordenadas de la más reciente a la más antigua.
+     * En datasets con variantes (GOWNS: un producto y una medida por reporte guardado) se
+     * filtra por `clave` ('PRODUCTO|sum'|'PRODUCTO|count') y la etiqueta se muestra como la
+     * temporada («2026»), aunque el id guardado sea PRODUCTO_2026_sum.
+     */
+    temporadas(snaps, dataset, clave) {
+      let lista = snaps.filter(s => s.dataset === dataset);
+      if (clave != null) lista = lista.filter(s => M.claveVar(s) === clave);
+      lista = lista.map(s => (s.meta && s.meta.temporada != null) ? Object.assign({}, s, { season: String(s.meta.temporada) }) : s);
+      return lista.sort((a, b) => (b.week1 || '').localeCompare(a.week1 || '') || String(b.season).localeCompare(String(a.season)));
+    },
+
+    /** Clave de variante de una temporada guardada ('' si el dataset no tiene variantes) */
+    claveVar(s) { return s && s.meta && s.meta.producto ? s.meta.producto + '|' + (s.meta.modo || 'sum') : ''; },
+    etiquetaVar(clave) {
+      const [p, m] = String(clave).split('|');
+      return p + (m === 'count' ? ' · órdenes' : ' · cantidades');
+    },
+    /** Variantes guardadas de un dataset: [{clave, etiqueta, ultima}] (la más reciente primero) */
+    variantes(snaps, dataset) {
+      const mapa = new Map();
+      snaps.filter(s => s.dataset === dataset && M.claveVar(s)).forEach(s => {
+        const c = M.claveVar(s), t = (s.meta && s.meta.procesado) || s.updatedAt || '';
+        if (!mapa.has(c) || t > mapa.get(c)) mapa.set(c, t);
+      });
+      return [...mapa].map(([clave, ultima]) => ({ clave, etiqueta: M.etiquetaVar(clave), ultima }))
+        .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta));
+    },
+    /** Copia del dashboard con la métrica del producto y la medida elegidos */
+    dashPara(dash, clave) {
+      if (!dash.variantes || !clave) return dash;
+      const etiqueta = M.etiquetaVar(clave);
+      return Object.assign({}, dash, {
+        campos: { v: etiqueta },
+        metricas: [{ id: 'valor', etiqueta, unidad: clave.endsWith('|count') ? 'órdenes' : 'unidades', num: c => c.v || 0 }],
+        principal: 'valor'
+      });
     },
 
     /** Suma de campos de una semana (o del bloque N/A) filtrando por tipos */

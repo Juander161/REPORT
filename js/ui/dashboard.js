@@ -31,9 +31,17 @@
   // =====================================================================================
   // MODELO DE LA VISTA
   // =====================================================================================
-  function calcular(dash, snaps, e) {
-    const temporadas = M.temporadas(snaps, dash.dataset);
-    if (!temporadas.length) return { vacio: true, temporadas };
+  function calcular(dashBase, snaps, e) {
+    // dashboards con variantes (GOWNS): un producto y una medida a la vez
+    let dash = dashBase, clave = null;
+    const variantes = dashBase.variantes ? M.variantes(snaps, dashBase.dataset) : [];
+    if (dashBase.variantes) {
+      const v = variantes.find(x => x.clave === e.variante) || variantes[0];
+      clave = v ? v.clave : null;
+      dash = M.dashPara(dashBase, clave);
+    }
+    const temporadas = M.temporadas(snaps, dash.dataset, clave);
+    if (!temporadas.length) return { vacio: true, temporadas, variantes, clave };
 
     const cur = temporadas.find(s => s.id === e.cur) || temporadas[0];
     let prev = null;
@@ -238,6 +246,7 @@
     vm.fueraPrev = prev ? M.semanasFuera(prev).length : 0;
     vm.fueraCurV = fueraDe(cur, opts);
     vm.fueraPrevV = prev ? fueraDe(prev, optsPrev) : 0;
+    vm.variantes = variantes; vm.clave = clave;
     vm.kpis = kpis(vm);
     vm.hallazgos = hallazgos(vm);
     vm.detalle = detalle(vm);
@@ -794,6 +803,11 @@
     // ---------- filtros: construcción
     function pintarFiltros() {
       filtros.replaceChildren();
+      if (dash.variantes && vm.variantes && vm.variantes.length) {
+        const selVar = el('select', { 'aria-label': 'Producto y medida' }, vm.variantes.map(x => el('option', { value: x.clave, selected: x.clave === vm.clave }, x.etiqueta)));
+        selVar.addEventListener('change', () => { e.variante = selVar.value; e.cur = null; e.prev = null; cambio(); });
+        filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Producto y medida'), selVar));
+      }
       const temps = vm.temporadas;
       const optTemp = (s, sel) => el('option', { value: s.id, selected: s.id === sel }, s.season + (s.demo ? ' (demo)' : ''));
       const selCur = el('select', { 'aria-label': 'Temporada actual' }, temps.map(s => optTemp(s, vm.cur.id)));
@@ -805,7 +819,7 @@
       filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Comparar'), el('div', { class: 'f-row' }, selCur, el('span', { class: 'f-vs' }, 'vs'), selPrev)));
 
       filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Métrica'),
-        segmentado(dash.metricas.map(m => [m.id, m.etiqueta]), vm.metrica.id, v => { e.metrica = v; cambio(); }, 'Métrica')));
+        segmentado(vm.dash.metricas.map(m => [m.id, m.etiqueta]), vm.metrica.id, v => { e.metrica = v; cambio(); }, 'Métrica')));
 
       const periodo = el('div', { class: 'f-row' });
       periodo.appendChild(segmentado([['rango', 'Rango'], ['semana', 'Una semana']], vm.modo, v => { e.modo = v; cambio(); }, 'Tipo de periodo'));
@@ -1049,7 +1063,7 @@
           el('li', null, el('strong', null, 'Compara: '), 'rangos de semanas, una semana puntual, tipos de asignación y exporta a Excel.')),
         el('div', { class: 'empty-actions' },
           !pendiente && rep && rep.archivo ? el('a', { class: 'btn primary', href: '#/reporte/' + rep.id }, icono('upload'), 'Ir al reporte') : null,
-          !pendiente ? el('button', { class: 'btn', type: 'button', onclick: async () => { const n = await RH.demo.cargar(); if (n) u.toast('Datos de demostración cargados.', { tipo: 'ok' }); } }, 'Ver con datos de demostración') : null,
+          !pendiente && !dash.variantes ? el('button', { class: 'btn', type: 'button', onclick: async () => { const n = await RH.demo.cargar(); if (n) u.toast('Datos de demostración cargados.', { tipo: 'ok' }); } }, 'Ver con datos de demostración') : null,
           el('a', { class: 'btn ghost', href: '#/datos' }, 'Importar base desde Excel'))].filter(Boolean));
     }
 
@@ -1115,7 +1129,7 @@
           el('div', { class: 'card-hr' }, ctrl, RH.info.boton('tabla-reporte'), btnCopiar)),
         el('p', { class: 'rep-meta' },
           'Lunes de la semana 1: ', el('strong', null, u.fmtFecha(snap.week1)),
-          ' · «Incluir filas con todo en 0»: ', el('strong', null, incluir ? 'Sí' : 'No'), notaForzada(snap, vm),
+          ...((dash.opciones || []).some(o => o.id === 'incluirCeros') ? [' · «Incluir filas con todo en 0»: ', el('strong', null, incluir ? 'Sí' : 'No'), notaForzada(snap, vm)] : []),
           m.archivo && m.archivo.nombre ? ' · Archivo: ' + m.archivo.nombre + (m.archivo.hoja ? ' (hoja ' + m.archivo.hoja + ')' : '') : '',
           m.procesado ? ' · Procesado: ' + u.fmtFechaHora(m.procesado) : '',
           snap.demo ? ' · DATOS DE DEMOSTRACIÓN' : ''),

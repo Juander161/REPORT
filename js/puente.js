@@ -57,7 +57,7 @@
   }
 
   async function guardar(snap) {
-    snap.id = RH.store.idDe(snap.dataset, snap.season);
+    snap.id = snap.id || RH.store.idDe(snap.dataset, snap.season);
     snap.updatedAt = new Date().toISOString();
     snap.meta = Object.assign({ origen: 'local', procesado: snap.updatedAt }, snap.meta || {});
     await RH.store.guardar(snap, { origen: 'reporte' });
@@ -88,32 +88,47 @@
     cont.hidden = true;
 
     ver.addEventListener('click', () => irA('#/dash/' + (dash ? dash.id : '')));
+    // clave de producto + medida (GOWNS): dos reportes solo son "gemelos" si comparten esa clave
+    const claveVar = x => (x.meta && x.meta.producto ? x.meta.producto + '|' + (x.meta.modo || '') : '');
+    const idNuevo = x => x.id || RH.store.idDe(x.dataset, x.season);
+
     btn.addEventListener('click', async () => {
-      let snap;
-      try { snap = opts.construir(); } catch (e) { estado.textContent = e.message; estado.className = 'save-msg err'; return; }
-      if (!snap.season) { estado.textContent = 'Escribe la etiqueta de la temporada (por ejemplo, 2026).'; estado.className = 'save-msg err'; return; }
-      if (!Object.keys(snap.weeks || {}).length) { estado.textContent = 'No hay ninguna semana con datos (todas las filas quedaron en N/A): revisa el lunes de la semana 1 y vuelve a procesar.'; estado.className = 'save-msg err'; return; }
-      const aviso = opts.validar ? opts.validar(snap) : null;
+      let lista;
+      try { lista = [].concat(opts.construir()); } catch (e) { estado.textContent = e.message; estado.className = 'save-msg err'; return; }
+      if (!lista.length || !lista[0].season) { estado.textContent = 'Escribe la etiqueta de la temporada (por ejemplo, 2026).'; estado.className = 'save-msg err'; return; }
+      const conDatos = lista.filter(x => Object.keys(x.weeks || {}).length);
+      if (!conDatos.length) { estado.textContent = 'No hay ninguna semana con datos (todas las filas quedaron en N/A): revisa el lunes de la semana 1 y vuelve a procesar.'; estado.className = 'save-msg err'; return; }
+      const omitidos = lista.length - conDatos.length;
+      lista = conDatos;
+      const aviso = opts.validar ? opts.validar(lista[0]) : null;
       if (aviso && !(await u.confirmar('Revisa antes de guardar', aviso, { aceptar: 'Guardar de todos modos' }))) return;
-      const gemela = (await RH.store.snapshots(snap.dataset)).find(s => !s.demo && s.week1 === snap.week1 && String(s.season) !== String(snap.season));
-      if (gemela) {
-        const msg = 'Ya existe la temporada «' + gemela.season + '» con el mismo lunes de semana 1 (' + u.fmtFecha(snap.week1) + '). ' +
-          'Si es la misma temporada, se reemplaza «' + gemela.season + '» por «' + snap.season + '» para no compararla contra sí misma.';
-        if (!(await u.confirmar('Misma temporada con otra etiqueta', msg, { aceptar: 'Reemplazar «' + gemela.season + '»' }))) return;
+      const existentes = (await RH.store.snapshots(lista[0].dataset)).filter(x => !x.demo);
+      const gemelas = new Map();
+      lista.forEach(x => existentes.filter(y => y.week1 === x.week1 && claveVar(y) === claveVar(x) && y.id !== idNuevo(x)).forEach(y => gemelas.set(y.id, y)));
+      if (gemelas.size) {
+        const nombres = [...gemelas.values()].map(y => '«' + y.season + '»').join(', ');
+        const msg = 'Ya existe(n) la(s) temporada(s) ' + nombres + ' con el mismo lunes de semana 1 (' + u.fmtFecha(lista[0].week1) + '). ' +
+          'Si es la misma temporada, se reemplaza por «' + lista[0].season + '» para no compararla contra sí misma.';
+        if (!(await u.confirmar('Misma temporada con otra etiqueta', msg, { aceptar: 'Reemplazar' }))) return;
       }
-      const previo = await RH.store.snapshot(RH.store.idDe(snap.dataset, snap.season));
-      if (previo && !previo.demo) {
-        const msg = 'Ya existe la temporada ' + snap.season + ' en ' + (dash ? dash.titulo : snap.dataset) +
-          ' (procesada ' + u.fmtFechaHora(previo.meta && previo.meta.procesado) + ', ' + (previo.meta && previo.meta.archivo ? previo.meta.archivo.nombre : '') + ').' +
-          (previo.week1 !== snap.week1 ? ' OJO: tenía otro lunes de semana 1 (' + u.fmtFecha(previo.week1) + ').' : '') +
-          ' ¿Reemplazarla con este archivo?';
+      const previos = lista.map(x => existentes.find(y => y.id === idNuevo(x))).filter(Boolean);
+      if (previos.length) {
+        const p0 = previos[0];
+        const msg = 'Ya existe la temporada ' + lista[0].season + ' en ' + (dash ? dash.titulo : lista[0].dataset) +
+          (previos.length > 1 ? ' para ' + previos.length + ' reportes' : '') +
+          ' (procesada ' + u.fmtFechaHora(p0.meta && p0.meta.procesado) + ', ' + (p0.meta && p0.meta.archivo ? p0.meta.archivo.nombre : '') + ').' +
+          (p0.week1 !== lista[0].week1 ? ' OJO: tenía otro lunes de semana 1 (' + u.fmtFecha(p0.week1) + ').' : '') +
+          ' ¿Reemplazar' + (previos.length > 1 ? 'los' : 'la') + ' con este archivo?';
         if (!(await u.confirmar('Reemplazar temporada', msg, { aceptar: 'Reemplazar' }))) return;
       }
       btn.disabled = true;
       try {
-        if (gemela) await RH.store.borrar(gemela.id);
-        await guardar(snap);
-        estado.textContent = 'Guardado: temporada ' + snap.season + ' en ' + (dash ? dash.titulo : snap.dataset) + '. Ya no necesitas volver a cargar este archivo.';
+        for (const g of gemelas.values()) await RH.store.borrar(g.id);
+        for (const x of lista) await guardar(x);
+        estado.textContent = lista.length === 1
+          ? 'Guardado: temporada ' + lista[0].season + ' en ' + (dash ? dash.titulo : lista[0].dataset) + '. Ya no necesitas volver a cargar este archivo.'
+          : 'Guardados ' + lista.length + ' reportes en ' + (dash ? dash.titulo : lista[0].dataset) + ': ' + lista.map(x => x.id.split('|')[1]).join(', ') + '. Ya no necesitas volver a cargar este archivo.' +
+            (omitidos ? ' (' + omitidos + ' sin semanas con datos, omitido(s).)' : '');
         estado.className = 'save-msg ok';
         ver.hidden = false;
       } catch (e) {
@@ -147,8 +162,13 @@
       chipsSuscritos = true;
       RH.store.alCambiar(m => { if (!m || m.tipo === 'snapshots') actualizarTemporadas(opts); });
     }
+    // GOWNS guarda un reporte por producto y medida: aquí interesa la temporada («2026»), una sola vez
+    const etiqueta = s => String(s.meta && s.meta.temporada != null ? s.meta.temporada : s.season);
+    const vistas = new Set();
     const snaps = (await RH.store.snapshots(opts.dataset)).filter(s => !s.demo)
-      .sort((a, b) => (b.week1 || '').localeCompare(a.week1 || ''));
+      .sort((a, b) => (b.week1 || '').localeCompare(a.week1 || ''))
+      .filter(s => { const k = s.week1 + '|' + etiqueta(s); if (vistas.has(k)) return false; vistas.add(k); return true; })
+      .map(s => Object.assign({}, s, { season: etiqueta(s) }));
     etiquetaPorLunes.clear();
     snaps.forEach(s => { if (s.week1 && !etiquetaPorLunes.has(s.week1)) etiquetaPorLunes.set(s.week1, String(s.season)); });
     if (sugerirActual) sugerirActual();   // sin disparar eventos: no invalida un resultado ya procesado

@@ -86,6 +86,16 @@
       <p class="muted">Sirve con cualquier reporte registrado: si agregas uno nuevo (por ejemplo GOWNS), aparece aquí solo.</p>
     </section>
 
+    <section class="card span-6 guide" id="gowns">
+      <h3 class="card-t">GOWNS: cantidades u órdenes por producto</h3>
+      <ol>
+        <li>En <strong>Gowns</strong> (Reportes) elige el archivo y, según su estructura, la <strong>columna de fecha</strong> (define las semanas), la <strong>columna de tipo</strong> y los <strong>tipos a incluir</strong> (por defecto GREG y COLL).</li>
+        <li>Marca los <strong>productos</strong> (columnas de cantidad) y las <strong>medidas</strong>: <em>cantidades</em> = suma de la columna; <em>órdenes</em> = filas con cantidad mayor que 0.</li>
+        <li>Al guardar se crea un reporte por producto y medida, con nombre <code>producto_temporada_sum</code> o <code>producto_temporada_count</code> (por ejemplo <code>GOWN_2026_sum</code>). En el dashboard eliges «Producto y medida».</li>
+        <li>Las filas con fecha anterior al lunes de la semana 1 (o sin fecha) van a <strong>N/A</strong>, que aparece <strong>antes</strong> de la semana 1 en todos los reportes.</li>
+      </ol>
+    </section>
+
     <section class="card span-6 guide" id="privacidad">
       <h3 class="card-t">8 · Privacidad y seguridad</h3>
       <ul>

@@ -35,7 +35,11 @@
   }
 
   function tarjetaDash(dash, snaps) {
-    const temps = M.temporadas(snaps, dash.dataset);
+    // en dashboards con variantes (GOWNS) la tarjeta muestra el primer producto/medida (orden alfabético)
+    const variantes = dash.variantes ? M.variantes(snaps, dash.dataset) : [];
+    const claveVar = variantes[0] ? variantes[0].clave : null;
+    if (dash.variantes) dash = M.dashPara(dash, claveVar);
+    const temps = M.temporadas(snaps, dash.dataset, claveVar);
     const pendiente = dash.estado === 'pendiente';
     const card = el('article', { class: 'card pano' + (pendiente ? ' pano-pend' : '') });
     const estado = pendiente ? ['Pendiente', 'pill-pend'] : !temps.length ? ['Sin datos', 'pill-off'] : temps[0].demo ? ['Demostración', 'pill-demo'] : ['Actualizado', 'pill-ok'];
