@@ -98,6 +98,25 @@
           render();
         })));
 
+      // ---------- enlace al Excel en Teams / SharePoint
+      const enlace = await RH.store.ajuste('enlaceBase', null);
+      const inUrl = el('input', { type: 'url', class: 'inp-url', placeholder: 'https://su-empresa.sharepoint.com/…/REPORT_DB.xlsx', value: enlace && enlace.url ? enlace.url : '', 'aria-label': 'Enlace al Excel' });
+      const cardE = el('section', { class: 'card span-12 db-card' },
+        el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, 'Abrir Excel desde un enlace (Teams / SharePoint)'), el('p', { class: 'card-s' }, 'Lectura solamente · solo dominios *.sharepoint.com o este mismo sitio')),
+          el('span', { class: 'pill ' + (enlace && enlace.estado === 'ok' ? 'pill-ok' : enlace && enlace.estado === 'error' ? 'pill-err' : 'pill-off') }, enlace && enlace.estado === 'ok' ? 'Conectado' : enlace && enlace.estado === 'error' ? 'Error' : 'Sin enlace')),
+        el('p', null, 'Pega el enlace del ', el('code', null, RH.dbx.NOMBRE), '. Los permisos los administras en Teams/OneDrive; la aplicación solo lee el archivo y no envía ningún dato.'),
+        inUrl,
+        enlace && enlace.estado === 'ok' ? el('p', { class: 'muted small' }, (enlace.temporadas || []).length + ' temporada(s) · revisado ' + u.fmtFechaHora(enlace.revisado)) : null,
+        enlace && enlace.estado === 'error' ? el('p', { class: 'error-text' }, enlace.error) : null,
+        el('div', { class: 'card-actions' },
+          btn('Leer del enlace', async () => {
+            const r = await RH.dbx.cargarEnlace(inUrl.value);
+            if (r.estado === 'ok') u.toast('Enlace leído: ' + r.nuevos + ' nueva(s), ' + r.actualizados + ' actualizada(s).', { tipo: 'ok' });
+            else u.toast(r.error, { tipo: 'error', ms: 9000 });
+            render();
+          }, 'primary'),
+          enlace ? btn('Quitar enlace', async () => { await RH.dbx.olvidarEnlace(); render(); }) : null));
+
       // ---------- temporadas
       const tabla = el('table', { class: 'tbl tbl-db' });
       tabla.appendChild(el('thead', null, el('tr', null, ['Dashboard', 'Temporada', 'Lunes semana 1', 'Semanas', 'Tipos', 'Archivo de origen', 'Filas leídas', 'Procesado', 'Origen', ''].map((h, i) => el('th', { class: [3, 4, 6].includes(i) ? 'num' : '' }, h)))));
@@ -148,7 +167,7 @@
         el('p', { class: 'muted small' }, 'Si borras los datos de navegación se pierde la copia local; por eso conviene vincular o exportar el Excel.'),
         persist ? null : el('div', { class: 'card-actions' }, btn('Activar protección', async () => { const ok = await RH.store.persistente(); u.toast(ok ? 'Protección activada.' : 'El navegador no la concedió (se concede automáticamente al instalar la app).', { tipo: ok ? 'ok' : 'warn' }); render(); })));
 
-      raiz.replaceChildren(head, el('div', { class: 'grid' }, cardV, cardX, cardC, cardT, cardD, cardS));
+      raiz.replaceChildren(head, el('div', { class: 'grid' }, cardV, cardX, cardC, cardE, cardT, cardD, cardS));
     }
 
     function reportar(r) {

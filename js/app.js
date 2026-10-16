@@ -308,6 +308,9 @@
         u.toast('Base compartida del equipo: ' + (r.nuevos + r.actualizados) + ' temporada(s) cargadas.', { tipo: 'ok' });
       }
     }).catch(() => {});
+    RH.store.ajuste('enlaceBase', null).then(e => e && e.url && navigator.onLine !== false && RH.dbx.cargarEnlace(e.url).then(r => {
+      if (r && r.estado === 'ok' && (r.nuevos || r.actualizados)) u.toast('Excel del enlace: ' + (r.nuevos + r.actualizados) + ' temporada(s) actualizadas.', { tipo: 'ok' });
+    })).catch(() => {});
     RH.dbx.iniciarVinculo();
     let ultimoFoco = Date.now();
     window.addEventListener('focus', () => {

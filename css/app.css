@@ -510,3 +510,5 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
 .proy .filters { align-items: flex-end; }
 .proy .tbl tr.sel td { background: var(--surface-3); font-weight: 700; }
 @media print { .info-btn, .info-pop { display: none !important; } }
+
+.inp-url { width: 100%; max-width: 720px; padding: 9px 12px; border: 1px solid var(--border-2); border-radius: 9px; background: var(--surface); color: var(--text-1); font: inherit; margin-top: 4px; }
