@@ -1,7 +1,7 @@
 /* Report Hub · service worker (funcionamiento sin conexión).
    IMPORTANTE: al publicar cambios, sube el número de VERSION para que cada
    persona reciba el aviso «Nueva versión disponible». */
-const VERSION = 'report-hub-v1.2.0';
+const VERSION = 'report-hub-v1.3.0';
 const DATOS = 'report-hub-datos';
 
 const ARCHIVOS = [
@@ -19,12 +19,15 @@ const ARCHIVOS = [
   'js/core/excel-filas.js',
   'js/core/tablas.js',
   'js/core/model.js',
+  'js/core/proyeccion.js',
   'js/core/dbexcel.js',
   'js/core/demo.js',
   'js/registry.js',
   'js/puente.js',
+  'js/ui/info.js',
   'js/ui/charts.js',
   'js/ui/dashboard.js',
+  'js/ui/proyeccion.js',
   'js/ui/panorama.js',
   'js/ui/datos.js',
   'js/ui/ayuda.js',

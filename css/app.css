@@ -489,3 +489,24 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
   table.heat td, .heat-ramp { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .view[hidden] { display: none !important; }
 }
+
+
+/* ------------------------------------------------------------ ayuda contextual */
+.info-btn { font: italic 700 13px Georgia, 'Times New Roman', serif; width: 28px; height: 28px; color: var(--text-2); border: 1px solid var(--border); border-radius: 50%; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.info-btn:hover, .info-btn:focus-visible { color: var(--c-cur); border-color: var(--c-cur); }
+.info-pop { position: fixed; z-index: 400; max-width: min(360px, calc(100vw - 16px)); background: var(--surface); color: var(--text-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 27, 45, .22); padding: 12px 14px; font-size: 12.5px; line-height: 1.5; }
+.info-pop p { margin: 2px 0 8px; color: var(--text-2); }
+.info-pop .ip-h { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); font-weight: 700; }
+.info-pop .ip-term { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.info-pop .ip-term span { color: var(--text-2); }
+.term { border-bottom: 1px dotted var(--text-3); cursor: help; }
+.term:focus-visible { outline: 2px solid var(--c-cur); outline-offset: 2px; border-radius: 3px; }
+.glosario dl { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 8px 18px; margin: 0; }
+.glosario dt { font-weight: 700; color: var(--text-1); }
+.glosario dd { margin: 0; color: var(--text-2); }
+@media (max-width: 720px) { .glosario dl { grid-template-columns: 1fr; gap: 2px; } .glosario dd { margin-bottom: 10px; } }
+
+/* ------------------------------------------------------------ proyección */
+.proy .filters { align-items: flex-end; }
+.proy .tbl tr.sel td { background: var(--surface-3); font-weight: 700; }
+@media print { .info-btn, .info-pop { display: none !important; } }

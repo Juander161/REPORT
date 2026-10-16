@@ -220,6 +220,36 @@ data/                    base compartida opcional (REPORT_DB.xlsx)
 icons/                   íconos de la app
 ```
 
+## Proyección de temporada
+
+La vista **Proyección de temporada** estima el cierre de la temporada actual con las
+anteriores. Es dinámica: eliges el reporte (cualquier dashboard registrado), qué proyectar
+(una métrica o cualquier campo guardado), los tipos, las temporadas base, la semana de corte
+y el método. Métodos: índice de crecimiento (real a la fecha ÷ base a la misma fecha, aplicado
+al resto), índice reciente (últimas *m* semanas), crecimiento geométrico (P = P₀·(1+r)ⁿ, como
+en poblaciones), lineal y promedio histórico. La tabla inferior compara todos; el rango va del
+escenario más bajo al más alto según cada base. Con una sola temporada base es orientativo.
+El cálculo está en `js/core/proyeccion.js` y la vista en `js/ui/proyeccion.js`.
+
+## Ayuda en pantalla
+
+Cada gráfica tiene un botón **ⓘ** (cursor, clic o teclado) que explica qué muestra y cómo
+leerla; términos como **pp** o **N/A** se subrayan solos y muestran su definición. Todos los
+textos están en `js/ui/info.js` y el glosario también aparece en la Guía de uso.
+
+## Privacidad y seguridad
+
+- La aplicación **no se conecta a nada**: no hay servicios externos, CDN, fuentes ni analítica
+  (la librería de gráficas va incluida en `vendor/`). Además, una política de seguridad
+  (Content-Security-Policy) en `index.html` y en cada página de reporte impide al navegador
+  hacer conexiones hacia afuera; se verificó que `fetch`, WebSocket e imágenes externas quedan
+  bloqueados y que en un recorrido completo no sale ninguna petición fuera del propio sitio.
+- Los datos viven en el navegador de cada persona (IndexedDB) y en el Excel que se vincule.
+- **Permisos:** se administran en el archivo `REPORT_DB.xlsx` de Teams/OneDrive. No se usan
+  enlaces con descarga automática porque eso exigiría conectarse a Microsoft e iniciar sesión
+  desde la aplicación; en su lugar, se sincroniza la carpeta de OneDrive/Teams en cada equipo
+  y se usa «Vincular Excel» (ver la sección de OneDrive).
+
 ### Fidelidad con los reportes originales
 
 Las páginas de `reportes/` conservan la misma lógica de lectura y conteo que los

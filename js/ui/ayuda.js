@@ -74,10 +74,34 @@
       </ol>
       <p class="muted">El detalle paso a paso está en el README del repositorio.</p>
     </section>
+
+    <section class="card span-6 guide">
+      <h3 class="card-t">7 · Proyección de temporada</h3>
+      <ol>
+        <li>Abre <strong>Proyección de temporada</strong> en el menú. Elige el reporte, <strong>qué proyectar</strong> (una métrica o cualquier campo guardado), los <strong>tipos</strong> y las <strong>temporadas base</strong>.</li>
+        <li>La <strong>semana de corte</strong> es hasta dónde llega lo real (por defecto, la última semana completa). El resto se estima.</li>
+        <li>Elige el <strong>método</strong>: índice de crecimiento (el más usado), índice reciente, crecimiento geométrico (como en poblaciones), lineal o promedio histórico. La tabla inferior los compara lado a lado.</li>
+        <li>El <strong>rango</strong> va del escenario más bajo al más alto según cada temporada base. Con pocas temporadas es orientativo.</li>
+      </ol>
+      <p class="muted">Sirve con cualquier reporte registrado: si agregas uno nuevo (por ejemplo GOWNS), aparece aquí solo.</p>
+    </section>
+
+    <section class="card span-6 guide" id="privacidad">
+      <h3 class="card-t">8 · Privacidad y seguridad</h3>
+      <ul>
+        <li><strong>No se conecta a internet ni a ningún servicio.</strong> Los archivos CSV/Excel se procesan en tu equipo; nada se sube ni se envía. La aplicación incluye una política de seguridad (CSP) que impide al navegador hacer conexiones hacia afuera.</li>
+        <li>Todo lo que ves (gráficas, íconos, tipografías) viene incluido en la aplicación: no se descarga nada de terceros. Funciona sin conexión.</li>
+        <li>Los datos se guardan <strong>solo en este navegador</strong> (IndexedDB) y en el Excel <code>REPORT_DB.xlsx</code> si decides vincularlo.</li>
+        <li><strong>Quién puede ver los datos</strong> se controla con los permisos del archivo <code>REPORT_DB.xlsx</code> en OneDrive/Teams (los administras tú). La aplicación no pide ni guarda contraseñas.</li>
+        <li>Para compartir sin enlaces públicos: pon la carpeta de la aplicación y el Excel en un sitio de Teams/OneDrive con acceso solo para tu equipo y usa «Vincular Excel» desde la carpeta sincronizada.</li>
+      </ul>
+    </section>
   </div>`;
 
   function montar(cont) {
     cont.replaceChildren(el('div', { class: 'ayuda-view', html: HTML }));
+    const grid = cont.querySelector('.grid');
+    if (grid && RH.info) grid.appendChild(RH.info.tarjetaGlosario());
     return { actualizar() {}, retematizar() {} };
   }
 
