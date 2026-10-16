@@ -16,6 +16,7 @@
     homeship: '<path d="M3 11l9-7 9 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10v10h14V10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 20v-5h4v5" fill="none" stroke="currentColor" stroke-width="1.7"/>',
     reporte: '<path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12h6M9 16h6M9 8h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
     pendiente: '<path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-dasharray="3 2" stroke-linejoin="round"/><path d="M12 10v6M9 13h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    proyeccion: '<path d="M3 18l5-6 4 3 8-10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 5h4v4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 17l2 1 2-1 2 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none" stroke-dasharray="2 2"/>',
     datos: '<ellipse cx="12" cy="6" rx="7" ry="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" fill="none" stroke="currentColor" stroke-width="1.7"/>',
     ayuda: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1" fill="currentColor"/>'
   };
@@ -31,6 +32,8 @@
       ...reg.dashboards.map(d => item('#/dash/' + d.id, d.titulo, d.id, d.estado === 'pendiente' ? '<em class="nav-badge">pronto</em>' : '')),
       el('div', { class: 'nav-sec' }, 'Reportes · actualizar datos'),
       ...reg.reportes.map(r => item('#/reporte/' + r.id, r.titulo, r.archivo ? 'reporte' : 'pendiente', !r.archivo ? '<em class="nav-badge">pendiente</em>' : '')),
+      el('div', { class: 'nav-sec' }, 'Análisis'),
+      item('#/proyeccion', 'Proyección de temporada', 'proyeccion'),
       el('div', { class: 'nav-sec' }, 'Datos'),
       item('#/datos', 'Base de datos (Excel)', 'datos', '<span class="nav-sync" id="navSync" hidden></span>'),
       item('#/ayuda', 'Guía de uso', 'ayuda'));
@@ -83,7 +86,8 @@
         clave = 'dash/' + d.id;
         titulo = d.titulo;
         mostrarVista(clave, c => RH.dashboard.montar(c, d));
-      } else if (r.seccion === 'datos') { titulo = 'Base de datos'; mostrarVista('datos', c => RH.datos.montar(c)); }
+      } else if (r.seccion === 'proyeccion') { titulo = 'Proyección de temporada'; mostrarVista('proyeccion', c => RH.proyeccionUI.montar(c)); }
+      else if (r.seccion === 'datos') { titulo = 'Base de datos'; mostrarVista('datos', c => RH.datos.montar(c)); }
       else if (r.seccion === 'ayuda') { titulo = 'Guía de uso'; mostrarVista('ayuda', c => RH.ayuda.montar(c)); }
       else { clave = 'panorama'; mostrarVista('panorama', c => RH.panorama.montar(c)); }
     }
@@ -255,6 +259,7 @@
   // ---------------------------------------------------------------- arranque
   async function iniciar() {
     menuLateral();
+    RH.info.observar(document.getElementById('views'));
     u.$('#appVer').textContent = 'v' + reg.app.version;
 
     // tema
@@ -303,6 +308,9 @@
         u.toast('Base compartida del equipo: ' + (r.nuevos + r.actualizados) + ' temporada(s) cargadas.', { tipo: 'ok' });
       }
     }).catch(() => {});
+    RH.store.ajuste('enlaceBase', null).then(e => e && e.url && navigator.onLine !== false && RH.dbx.cargarEnlace(e.url).then(r => {
+      if (r && r.estado === 'ok' && (r.nuevos || r.actualizados)) u.toast('Excel del enlace: ' + (r.nuevos + r.actualizados) + ' temporada(s) actualizadas.', { tipo: 'ok' });
+    })).catch(() => {});
     RH.dbx.iniciarVinculo();
     let ultimoFoco = Date.now();
     window.addEventListener('focus', () => {

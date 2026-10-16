@@ -2,7 +2,7 @@
    Cada gráfica se describe con un "spec" independiente de la librería:
      { id, tipo:'col'|'line'|'barH'|'colStacked'|'diverging', titulo, subtitulo,
        categorias[], categoriasLargas[], notas[], ejeX, formato:'int'|'pct'|'dInt'|'dPct',
-       series:[{nombre, valores[], rol:'cur'|'prev'|'cat', cat?:n, area?:bool}],
+       series:[{nombre, valores[], rol:'cur'|'prev'|'cat'|'otros'|'proy', cat?:n, area?:bool, dash?:bool, fino?:bool}],
        resaltar?: índice, delta?: bool, total?: bool, archivo: 'nombre' }
    Con el mismo spec se dibuja en pantalla (Chart.js), se exporta a PNG, se copia
    como tabla para Excel y se genera un .xlsx con la gráfica NATIVA de Excel. */
@@ -41,6 +41,7 @@
     if (s.rol === 'cur') return T.cur;
     if (s.rol === 'prev') return T.prev;
     if (s.rol === 'otros') return T.otros;
+    if (s.rol === 'proy') return T.cur;
     if (s.rol === 'cat') return T.cats[(s.cat || 0) % T.cats.length];
     return T.cur;
   }
@@ -131,7 +132,7 @@
         return {
           label: s.nombre, data: s.valores.slice(),
           borderColor: color, backgroundColor: s.area ? alpha(color, 0.10) : color,
-          fill: s.area ? 'origin' : false, borderWidth: exp ? 2.5 : 2, tension: 0.25,
+          fill: s.area ? 'origin' : false, borderWidth: s.fino ? 1.2 : (exp ? 2.5 : 2), tension: 0.25, borderDash: s.dash ? [7, 5] : [],
           borderCapStyle: 'round', borderJoinStyle: 'round',
           pointRadius: s.valores.map((v, i) => (i === hi || n === 1 || (hi == null && i === lastIdx(s.valores) && s.rol === 'cur')) ? 4 : 0),
           pointHoverRadius: 5, pointBackgroundColor: color, pointBorderColor: T.surface, pointBorderWidth: 2,
@@ -141,12 +142,13 @@
       let bg;
       if (div) bg = s.valores.map((v, i) => { const c = v < 0 ? T.neg : T.pos; return hi != null && i !== hi ? alpha(c, tenue) : c; });
       else if (hi != null) bg = s.valores.map((v, i) => i === hi ? color : alpha(color, tenue));
+      else if (s.rol === 'proy') bg = alpha(color, 0.38);
       else bg = color;
       return {
         label: s.nombre, data: s.valores.slice(), backgroundColor: bg,
         borderRadius: apilada ? 0 : 4, borderSkipped: 'start',
-        borderWidth: apilada ? { top: 2, right: 0, bottom: 0, left: 0 } : 0,
-        borderColor: T.surface,
+        borderWidth: s.rol === 'proy' ? 1.5 : (apilada ? { top: 2, right: 0, bottom: 0, left: 0 } : 0),
+        borderColor: s.rol === 'proy' ? color : T.surface,
         maxBarThickness: horizontal ? 18 : 24,
         categoryPercentage: horizontal ? 0.74 : 0.72, barPercentage: apilada ? 0.92 : 0.86
       };

@@ -687,7 +687,7 @@
     const sub = el('p', { class: 'card-s' });
     const controles = el('div', { class: 'card-ctrl' });
     const btnMenu = el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Opciones de exportación' }, icono('menu'));
-    const cab = el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, titulo, sub), el('div', { class: 'card-hr' }, controles, btnMenu));
+    const cab = el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, titulo, sub), el('div', { class: 'card-hr' }, controles, RH.info.boton(cfg.ayuda || cfg.id), btnMenu));
     const leyenda = el('div', { class: 'legend' });
     const cuerpo = el('div', { class: 'chart-box' + (cfg.alto ? ' h-' + cfg.alto : '') });
     const tablaCaja = el('div', { class: 'table-view', hidden: true });
@@ -914,7 +914,7 @@
       const titulo = 'Mapa de calor · ' + vm.metrica.etiqueta + ' por tipo y semana';
       cCalor.replaceChildren(el('header', { class: 'card-h' },
         el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, titulo), el('p', { class: 'card-s' }, (modoCalor === 'delta' ? 'Variación ' + vm.comparando : 'Temporada ' + (modoCalor === 'prev' ? vm.prev.season : vm.cur.season)) + ' · ' + vm.periodo)),
-        el('div', { class: 'card-hr' }, ctrl, btnCopiar)));
+        el('div', { class: 'card-hr' }, ctrl, RH.info.boton('calor'), btnCopiar)));
 
       const mat = modoCalor === 'cur' ? c.cur : modoCalor === 'prev' ? c.prev
         : c.cur.map((fila, k) => fila.map((x, i) => x != null && c.prev[k][i] != null ? (vm.fmtM === 'pct' ? x - c.prev[k][i] : x - c.prev[k][i]) : null));
@@ -1014,7 +1014,7 @@
       btnX.addEventListener('click', () => btnExcel.click());
       cDet.replaceChildren(el('header', { class: 'card-h' },
         el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, 'Detalle semanal · ' + vm.metrica.etiqueta), el('p', { class: 'card-s' }, vm.periodo + ' · ' + vm.comparando + (vm.tiposSel ? ' · ' + vm.filtroTipos : ''))),
-        el('div', { class: 'card-hr' }, btnCopiar, btnX)),
+        el('div', { class: 'card-hr' }, RH.info.boton('detalle'), btnCopiar, btnX)),
         el('div', { class: 'table-wrap' }, t));
     }
 
@@ -1112,7 +1112,7 @@
           el('div', { class: 'card-hl' },
             el('h3', { class: 'card-t' }, 'Tabla del reporte · temporada ' + snap.season),
             el('p', { class: 'card-s' }, 'Idéntica a la tabla del HTML «' + (rep ? rep.titulo : '') + '» para el mismo archivo: mismas columnas, fila N/A y TOTAL (todo el archivo, sin filtros de periodo ni de tipo).')),
-          el('div', { class: 'card-hr' }, ctrl, btnCopiar)),
+          el('div', { class: 'card-hr' }, ctrl, RH.info.boton('tabla-reporte'), btnCopiar)),
         el('p', { class: 'rep-meta' },
           'Lunes de la semana 1: ', el('strong', null, u.fmtFecha(snap.week1)),
           ' · «Incluir filas con todo en 0»: ', el('strong', null, incluir ? 'Sí' : 'No'), notaForzada(snap, vm),
@@ -1130,5 +1130,5 @@
     };
   }
 
-  RH.dashboard = { montar, calcular, exportarExcel, icono, menu, segmentado };
+  RH.dashboard = { montar, calcular, exportarExcel, icono, menu, segmentado, tarjeta };
 })(window.RH = window.RH || {});

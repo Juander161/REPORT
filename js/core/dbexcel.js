@@ -283,6 +283,51 @@
     }
   }
 
+  // ---------------------------------------------------------------- enlace al Excel (Teams / SharePoint / OneDrive)
+  // Única conexión externa posible: leer TU Excel desde tu propio SharePoint. La política de
+  // seguridad de index.html solo permite este dominio (y el propio sitio); no hay terceros.
+  const DOMINIOS_ENLACE = /(^|\.)sharepoint\.com$/i;
+
+  function normalizarEnlace(texto) {
+    let url;
+    try { url = new URL(String(texto).trim(), location.href); } catch (e) { throw new Error('El enlace no es válido.'); }
+    const mismo = url.origin === location.origin;
+    if (!mismo && (url.protocol !== 'https:' || !DOMINIOS_ENLACE.test(url.hostname))) {
+      throw new Error('Solo se permiten enlaces de SharePoint/Teams/OneDrive de empresa (*.sharepoint.com) o del propio sitio. Por seguridad la aplicación no se conecta a otros dominios.');
+    }
+    // los enlaces de compartir de SharePoint devuelven una página; download=1 pide el archivo
+    if (!mismo && !url.searchParams.has('download')) url.searchParams.set('download', '1');
+    return url.href;
+  }
+
+  async function cargarEnlace(texto, opts) {
+    opts = opts || {};
+    const url = normalizarEnlace(texto);
+    let res;
+    try { res = await fetch(url, { cache: 'no-store', credentials: 'include' }); }
+    catch (e) {
+      const msg = 'El navegador no pudo leer el enlace. SharePoint normalmente no permite que una página externa lea sus archivos (CORS) ni sin iniciar sesión. Alternativas: sincroniza la carpeta de Teams/OneDrive y usa «Vincular Excel», o publica el Excel junto con la app.';
+      await store.fijar('enlaceBase', { url, estado: 'error', error: msg, revisado: new Date().toISOString() });
+      return { estado: 'error', error: msg };
+    }
+    if (!res.ok || (res.headers.get('content-type') || '').includes('text/html')) {
+      const msg = res.ok ? 'El enlace devolvió una página web (probablemente pide iniciar sesión), no el archivo Excel.' : 'El servidor respondió ' + res.status + '.';
+      await store.fijar('enlaceBase', { url, estado: 'error', error: msg, revisado: new Date().toISOString() });
+      return { estado: 'error', error: msg };
+    }
+    try {
+      const base = await leerBase(await res.arrayBuffer());
+      const r = await fusionarBase(base, 'compartida');
+      await store.fijar('enlaceBase', { url, estado: 'ok', revisado: new Date().toISOString(), temporadas: base.snaps.map(s => s.id) });
+      return Object.assign({ estado: 'ok' }, r);
+    } catch (e) {
+      await store.fijar('enlaceBase', { url, estado: 'error', error: e.message, revisado: new Date().toISOString() });
+      return { estado: 'error', error: e.message };
+    }
+  }
+
+  async function olvidarEnlace() { await store.fijar('enlaceBase', null); }
+
   // ---------------------------------------------------------------- archivo vinculado
   const soportaVinculo = typeof window.showSaveFilePicker === 'function' && typeof window.showOpenFilePicker === 'function';
   const vinc = { estado: soportaVinculo ? 'sin-vincular' : 'no-soportado', nombre: null, ultimo: null, error: null, ocupado: false };
@@ -392,7 +437,7 @@
 
   RH.dbx = {
     RUTA_COMPARTIDA, NOMBRE, soportaVinculo,
-    aLibro, deLibro, leerBase, resolver, fusionar, fusionarBase, exportar, importar, cargarCompartida,
+    aLibro, deLibro, leerBase, resolver, fusionar, fusionarBase, exportar, importar, cargarCompartida, cargarEnlace, olvidarEnlace, normalizarEnlace,
     vincular, desvincular, sincronizar, iniciarVinculo,
     get vinculo() { return Object.assign({}, vinc); }
   };
