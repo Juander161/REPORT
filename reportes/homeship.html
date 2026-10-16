@@ -113,6 +113,8 @@ let restadas = [];             // [fila, fecha, semana, tipo, valorFiltro, sumaO
 let restadasTruncadas = false;
 let rolesGuardados = {};       // nombre de columna -> "obj" | "cero" | "ign"
 let ultimo = null;             // resultado del último proceso (para guardarlo en el dashboard)
+let usado = null;          // configuración de la tabla que se ve (se conserva aunque se invalide)
+let procesando = false, cambioDurante = false;
 
 // ---------- Utilidades ----------
 function splitLinea(linea, delim) {
@@ -310,7 +312,13 @@ function renderRestadas() {
 }
 
 // ---------- Procesamiento ----------
+// si la configuración cambia MIENTRAS se procesa, el resultado no se puede guardar
 async function procesar() {
+  procesando = true; cambioDurante = false;
+  try { await procesarArchivo(); } finally { procesando = false; }
+}
+
+async function procesarArchivo() {
   const file = $("archivo").files[0];
   if (!file) { alert("Selecciona el archivo CSV o Excel"); return; }
 
@@ -322,6 +330,7 @@ async function procesar() {
   const COL_ORDEN = $("colOrden").value.trim().toUpperCase();
   const fmt = $("fmt").value;
   inicio = Date.parse($("inicio").value);
+  const INICIO_ISO = $("inicio").value;
   rolesGuardados = leerRoles();
   palabraUsada = PALABRA;
 
@@ -416,13 +425,16 @@ async function procesar() {
   $("progreso").firstElementChild.style.width = "0%";
   guardarUI.ocultar();
   ultimo = null;
+  usado = null;
+  $("usado").textContent = "";
   $("aviso").hidden = true;
   const hoja = RH.puente.esExcel(file) ? $("hoja").value : null;
+  let avisoExcel = null;
 
   try {
     if (RH.puente.esExcel(file)) {
       // Excel: cada fila llega como arreglo de textos (fechas como AAAA-MM-DD) y pasa por el MISMO emitir()
-      await RH.excelFilas.leer(file, {
+      const rx = await RH.excelFilas.leer(file, {
         hoja, columnasFecha: [COL_FECHA], alFila: emitir,
         alProgreso(leidos, total, etapa) {
           $("estado").textContent = (etapa === "cadenas" ? "Leyendo textos del Excel... " : "Procesando... ") + (leidos / 1048576).toFixed(0) +
@@ -430,6 +442,7 @@ async function procesar() {
           $("progreso").firstElementChild.style.width = (total ? Math.min(100, leidos / total * 100) : 100).toFixed(1) + "%";
         }
       });
+      avisoExcel = rx.aviso || null;
     } else {
     const reader = file.stream().getReader();
     const dec = new TextDecoder("utf-8");
@@ -486,28 +499,68 @@ async function procesar() {
   $("progreso").firstElementChild.style.width = "100%";
 
   // ---------- resultado listo para el dashboard ----------
-  ultimo = {
-    datos, tipos, inicioIso: $("inicio").value, fmt, colFecha: COL_FECHA, colTipo: COL_TIPO,
+  const resultado = {
+    datos, tipos, inicioIso: INICIO_ISO, fmt, colFecha: COL_FECHA, colTipo: COL_TIPO,
     colFiltro: COL_FILTRO, palabra: PALABRA, roles: Object.assign({}, rolesGuardados),
     archivo: RH.puente.metaArchivo(file, hoja), filas, coinciden, fechasMalas, antesDeInicio
   };
-  const semanasNum = [...datos.keys()].filter(k => k !== "N/A");
-  const ultSem = semanasNum.length ? Math.max(...semanasNum) : 0;
-  const avisos = RH.puente.avisosResultado({ base: coinciden, antesDeInicio, fechasMalas, maxSemana: ultSem });
+  usado = resultado;
+  if (cambioDurante) { configuracionCambio(" mientras se procesaba"); return; }
+  ultimo = resultado;
+  const avisos = RH.puente.avisosResultado({ base: coinciden, antesDeInicio, fechasMalas, maxSemana: Math.max(0, ...[...datos.keys()].filter(k => k !== "N/A")),
+    maxEnRango: ultimaSemana(datos), fuera: RH.puente.fueraDeRango(datos, "hs") });
+  if (avisoExcel) avisos.unshift(avisoExcel);
   if (PALABRA !== "HOMESHIP") avisos.unshift("La palabra usada es «" + PALABRA + "» (el dashboard es HOMESHIP).");
   pintarUsado();
   $("aviso").hidden = !avisos.length;
   $("aviso").textContent = avisos.length ? "⚠ " + avisos.join(" ") + " (Lunes usado: " + RH.util.fmtFecha(ultimo.inicioIso) + ")" : "";
-  guardarUI.mostrar("Temporada " + ($("temporada").value || "(sin etiqueta)") + " · Semana 1 = " + RH.util.fmtFecha(ultimo.inicioIso) +
-    " · " + ultSem + " semanas · " + coinciden.toLocaleString() + " filas con " + PALABRA + " de " + filas.toLocaleString() + " · " + tipos.size + " tipos de asignación.");
+  guardarUI.mostrar(resumenGuardar());
+}
+
+// última semana sin las de fuera de rango (fechas mal capturadas, p. ej. año 2062)
+function ultimaSemana(m) {
+  return RH.puente.ultimaSemana([...m.keys()].filter(k => k !== "N/A"));
+}
+
+function fueraTxt(m) {
+  const f = RH.puente.fueraDeRango(m, "hs");
+  return f.semanas.length ? " (+ " + f.semanas.length + " fuera de rango)" : "";
+}
+
+function resumenGuardar() {
+  return "Temporada " + ($("temporada").value || "(sin etiqueta)") + " · Semana 1 = " + RH.util.fmtFecha(ultimo.inicioIso) +
+    " · " + ultimaSemana(ultimo.datos) + " semanas" + fueraTxt(ultimo.datos) + " · " + ultimo.coinciden.toLocaleString() + " filas con " + ultimo.palabra + " de " + ultimo.filas.toLocaleString() + " · " + ultimo.tipos.size + " tipos de asignación.";
 }
 
 // configuración con la que se calculó la tabla que se ve (para comparar con el HTML original)
 function pintarUsado() {
-  if (!ultimo) { $("usado").textContent = ""; return; }
-  $("usado").textContent = "Calculado con: Lunes de la Semana 1 = " + ultimo.inicioIso + " · Formato " + (ultimo.fmt === "MDY" ? "Mes/Día/Año" : "Día/Mes/Año") +
-    " · Incluir filas con todo en 0: " + ($("incluirCeros").checked ? "Sí" : "No") + " · Filtro: " + ultimo.colFiltro + " contiene «" + ultimo.palabra + "»" +
-    " · Archivo: " + (ultimo.archivo ? ultimo.archivo.nombre + (ultimo.archivo.hoja ? " (hoja " + ultimo.archivo.hoja + ")" : "") : "");
+  const c = usado;
+  if (!c) { $("usado").textContent = ""; return; }
+  $("usado").textContent = (ultimo ? "Calculado con: " : "Calculado con (configuración anterior; vuelve a procesar): ") +
+    "Lunes de la Semana 1 = " + c.inicioIso + " · Formato " + (c.fmt === "MDY" ? "Mes/Día/Año" : "Día/Mes/Año") + (c.archivo && c.archivo.tipo === "excel" ? " (solo para fechas escritas como texto; las fechas de Excel se leen por su valor)" : "") +
+    " · Incluir filas con todo en 0: " + ($("incluirCeros").checked ? "Sí" : "No") + " · Filtro: " + c.colFiltro + " contiene «" + c.palabra + "»" + usadoAvanzado(c) +
+    " · Archivo: " + (c.archivo ? c.archivo.nombre + (c.archivo.hoja ? " (hoja " + c.archivo.hoja + ")" : "") : "");
+}
+
+// columnas y roles distintos de los de fábrica (en el HTML original siempre estaban a la vista)
+const NOMBRE_ROL = { obj: "Objetivo", cero: "Debe ser 0", ign: "Ignorar" };
+function usadoAvanzado(c) {
+  const partes = [];
+  if (c.colFecha !== $("colFecha").defaultValue.trim().toUpperCase()) partes.push("Columna de fecha = " + c.colFecha);
+  if (c.colTipo !== $("colTipo").defaultValue.trim().toUpperCase()) partes.push("Columna de tipo = " + c.colTipo);
+  const roles = Object.keys(c.roles || {}).filter(k => c.roles[k] !== rolPorDefecto(k)).map(k => k + " = " + NOMBRE_ROL[c.roles[k]]);
+  if (roles.length) partes.push("Roles cambiados: " + roles.join(", "));
+  if (partes.length) document.querySelector("details.adv").open = true;
+  return partes.length ? " · " + partes.join(" · ") : "";
+}
+
+// el resultado que se ve ya no corresponde al formulario: no se puede guardar hasta volver a procesar
+function configuracionCambio(cuando) {
+  ultimo = null;
+  guardarUI.ocultar();
+  pintarUsado();
+  $("aviso").hidden = false;
+  $("aviso").textContent = "La configuración cambió" + cuando + ": pulsa «Procesar» otra vez antes de guardar en el dashboard.";
 }
 
 // ---------- Guardar en el dashboard ----------
@@ -539,12 +592,13 @@ const guardarUI = RH.puente.panelGuardar({
     if (new Date(snap.week1 + "T00:00:00Z").getUTCDay() !== 1) avisos.push("El lunes de la semana 1 (" + snap.week1 + ") no es lunes.");
     if (snap.meta.coinciden && snap.meta.antesDeInicio > snap.meta.coinciden * 0.3) avisos.push("El " + Math.round(snap.meta.antesDeInicio / snap.meta.coinciden * 100) + " % de las filas filtradas quedó antes de la semana 1. ¿La fecha de inicio corresponde a este archivo?");
     if (!Object.keys(snap.weeks).length) avisos.push("No hay semanas con datos.");
-    else if (Math.max(...Object.keys(snap.weeks).map(Number)) > 53) avisos.push("Hay datos en la semana " + Math.max(...Object.keys(snap.weeks).map(Number)) + ": parece que el lunes de la semana 1 es de otra temporada.");
+    else avisos.push(...RH.puente.avisoSemanas(snap));
     return avisos.length ? avisos.join(" ") : null;
   }
 });
 
 $("go").onclick = procesar;
+$("temporada").addEventListener("input", () => { if (ultimo) guardarUI.mostrar(resumenGuardar()); });
 $("incluirCeros").onchange = () => { if (datos.size) render(); pintarUsado(); };
 $("depSemana").oninput = () => { if (restadas.length) renderRestadas(); };
 $("copiar").onclick = async () => {
@@ -566,11 +620,8 @@ RH.puente.zonaArchivo($("zona"), $("archivo"), $("archivoInfo"));
 RH.puente.enlazarTemporada($("inicio"), $("temporada"), $("inicioInfo"));
 // si cambia algo que afecta el cálculo después de procesar, el resultado ya no se puede guardar
 RH.puente.invalidarAlCambiar([$("archivo"), $("hoja"), $("inicio"), $("fmt"), $("colFecha"), $("colTipo"), $("colFiltro"), $("palabra"), $("config")], () => {
-  if (!ultimo) return;
-  ultimo = null;
-  guardarUI.ocultar();
-  $("aviso").hidden = false;
-  $("aviso").textContent = "La configuración cambió: pulsa «Procesar» otra vez antes de guardar en el dashboard.";
+  if (procesando) { cambioDurante = true; return; }
+  if (ultimo) configuracionCambio("");
 });
 RH.puente.actualizarTemporadas({ dataset: "homeship", chips: $("temporadas"), temporadaInput: $("temporada"), inicioInput: $("inicio") });
 </script>

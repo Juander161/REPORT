@@ -10,6 +10,17 @@
   // pero no extienden las gráficas ni las comparaciones.
   const MAX_SEMANA = 60;
 
+  function sumarBloque(bloque, tipos) {
+    const out = {};
+    if (bloque) {
+      for (const [t, campos] of Object.entries(bloque)) {
+        if (tipos && !tipos.has(t)) continue;
+        for (const [k, v] of Object.entries(campos)) out[k] = (out[k] || 0) + (+v || 0);
+      }
+    }
+    return out;
+  }
+
   const M = {
     MAX_SEMANA,
     semanasDe(snap) {
@@ -35,15 +46,13 @@
     agregado(snap, semana, tipos) {
       if (!snap) return null;
       if (semana !== 'N/A' && (semana < 1 || semana > M.ultimaSemana(snap))) return null;
-      const bloque = semana === 'N/A' ? snap.na : (snap.weeks || {})[semana];
-      const out = {};
-      if (bloque) {
-        for (const [t, campos] of Object.entries(bloque)) {
-          if (tipos && !tipos.has(t)) continue;
-          for (const [k, v] of Object.entries(campos)) out[k] = (out[k] || 0) + (+v || 0);
-        }
-      }
-      return out;
+      return sumarBloque(semana === 'N/A' ? snap.na : (snap.weeks || {})[semana], tipos);
+    },
+
+    /** Medida de las semanas fuera de rango (no se grafican, pero sí están en el TOTAL del HTML) */
+    medirFuera(snap, metrica, tipos, opts) {
+      if (!snap) return null;
+      return M.sumar(M.semanasFuera(snap).map(w => M.medir(metrica, sumarBloque(snap.weeks[w], tipos), opts)), metrica);
     },
 
     agregadoTipo(snap, semana, tipo) {
@@ -99,9 +108,15 @@
       });
     },
 
+    /** Tipos con datos en las semanas que se grafican (los que solo aparecen en semanas fuera de rango no cuentan) */
     tiposDe(...snaps) {
       const s = new Set();
-      for (const snap of snaps) if (snap) (snap.types || []).forEach(t => s.add(t));
+      for (const snap of snaps) {
+        if (!snap) continue;
+        const enRango = new Set();
+        for (const [w, b] of Object.entries(snap.weeks || {})) if (+w <= MAX_SEMANA) Object.keys(b || {}).forEach(t => enRango.add(t));
+        (snap.types || []).forEach(t => { if (enRango.has(t)) s.add(t); });
+      }
       return [...s].sort();
     },
 

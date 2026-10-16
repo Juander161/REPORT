@@ -16,11 +16,11 @@
       <ol>
         <li>Exporta el archivo de órdenes como siempre: <strong>CSV o Excel (.xlsx)</strong>.</li>
         <li>Abre <strong>Reportes</strong> en el menú y elige el reporte (por ejemplo «Tassels Only por semana»).</li>
-        <li>Selecciona el archivo (si es un Excel con varias hojas, elige la hoja), revisa el <strong>lunes de la semana 1</strong> — arranca igual que en el HTML original — y la <strong>temporada</strong> (por ejemplo, 2026).</li>
+        <li>Selecciona el archivo (si es un Excel con varias hojas, se propone la hoja activa; puedes elegir otra), revisa el <strong>lunes de la semana 1</strong> — arranca igual que en el HTML original — y la <strong>temporada</strong> (por ejemplo, 2026).</li>
         <li>Pulsa <strong>Procesar</strong>: obtienes la misma tabla de siempre, que puedes copiar a Excel.</li>
         <li>Pulsa <strong>Guardar en el dashboard</strong>. Si ya existía esa temporada se reemplaza por la versión nueva.</li>
       </ol>
-      <p class="muted">La temporada del año pasado se procesa <strong>una sola vez</strong>: queda guardada y no hay que volver a cargarla. Si aparece un aviso amarillo al procesar, revisa el lunes de inicio: casi siempre es de otra temporada.</p>
+      <p class="muted">La temporada del año pasado se procesa <strong>una sola vez</strong>: queda guardada y no hay que volver a cargarla. Si aparece un aviso amarillo al procesar, revisa el lunes de inicio: casi siempre es de otra temporada. Con Excel las fechas se leen por su valor, así que no dependen del formato Mes/Día o Día/Mes.</p>
     </section>
 
     <section class="card span-6 guide">

@@ -8,6 +8,20 @@
   'use strict';
   const u = RH.util, el = u.el;
   const embebido = window.self !== window.top;
+  // igual que RH.modelo.MAX_SEMANA: semanas mayores vienen de fechas mal capturadas (p. ej. año 2062)
+  const MAX_SEMANA = 60;
+
+  /** Filas en semanas fuera de rango de un Map(semana -> Map(tipo -> {campos})): { filas, semanas[] } */
+  function fueraDeRango(datos, campo) {
+    const semanas = [...datos.keys()].filter(k => k !== 'N/A' && k > MAX_SEMANA).sort((a, b) => a - b);
+    let filas = 0;
+    semanas.forEach(w => datos.get(w).forEach(o => { filas += +o[campo] || 0; }));
+    return { filas, semanas };
+  }
+  /** Última semana sin contar las de fuera de rango */
+  function ultimaSemana(semanas) {
+    return semanas.map(Number).filter(w => isFinite(w) && w <= MAX_SEMANA).reduce((a, b) => Math.max(a, b), 0);
+  }
 
   // tema compartido con la app
   function aplicarTema() {
@@ -102,7 +116,6 @@
         estado.textContent = 'Guardado: temporada ' + snap.season + ' en ' + (dash ? dash.titulo : snap.dataset) + '. Ya no necesitas volver a cargar este archivo.';
         estado.className = 'save-msg ok';
         ver.hidden = false;
-        actualizarTemporadas(opts);
       } catch (e) {
         estado.textContent = 'No se pudo guardar: ' + e.message;
         estado.className = 'save-msg err';
@@ -125,10 +138,15 @@
   // lunes de semana 1 → etiqueta de una temporada ya guardada (para sugerir la misma etiqueta)
   const etiquetaPorLunes = new Map();
   let sugerirActual = null;
+  let chipsSuscritos = false;
 
   /** Muestra las temporadas ya guardadas como chips que rellenan temporada y lunes */
   async function actualizarTemporadas(opts) {
     if (!opts.chips) return;
+    if (!chipsSuscritos) {
+      chipsSuscritos = true;
+      RH.store.alCambiar(m => { if (!m || m.tipo === 'snapshots') actualizarTemporadas(opts); });
+    }
     const snaps = (await RH.store.snapshots(opts.dataset)).filter(s => !s.demo)
       .sort((a, b) => (b.week1 || '').localeCompare(a.week1 || ''));
     etiquetaPorLunes.clear();
@@ -137,9 +155,10 @@
     opts.chips.replaceChildren();
     if (!snaps.length) { opts.chips.appendChild(el('span', { class: 'muted' }, 'Ninguna todavía.')); return; }
     snaps.forEach(s => {
-      const ult = Object.keys(s.weeks || {}).map(Number).filter(isFinite).reduce((a, b) => Math.max(a, b), 0);
+      const semanas = Object.keys(s.weeks || {});
+      const nFuera = semanas.filter(w => +w > MAX_SEMANA).length;
       const b = el('button', { type: 'button', class: 'chip-btn', title: 'Usar esta temporada (rellena temporada y lunes de la semana 1)' },
-        el('strong', null, s.season), ' · S1–S' + ult + ' · ' + u.fmtFechaHora(s.meta && s.meta.procesado));
+        el('strong', null, s.season), ' · S1–S' + ultimaSemana(semanas) + (nFuera ? ' + ' + nFuera + ' fuera de rango' : '') + ' · ' + u.fmtFechaHora(s.meta && s.meta.procesado));
       b.addEventListener('click', () => {
         if (opts.temporadaInput) { opts.temporadaInput.value = s.season; opts.temporadaInput.dataset.manual = '1'; }
         if (opts.inicioInput && s.week1) { opts.inicioInput.value = s.week1; opts.inicioInput.dispatchEvent(new Event('input')); }
@@ -174,13 +193,21 @@
   function zonaArchivo(label, input, info) {
     ['dragenter', 'dragover'].forEach(t => label.addEventListener(t, ev => { ev.preventDefault(); label.classList.add('drag'); }));
     ['dragleave', 'drop'].forEach(t => label.addEventListener(t, ev => { ev.preventDefault(); label.classList.remove('drag'); }));
-    label.addEventListener('drop', ev => {
+    const conArchivos = ev => !!ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files');
+    document.addEventListener('dragover', ev => { if (conArchivos(ev)) ev.preventDefault(); });
+    document.addEventListener('drop', ev => {
+      if (!conArchivos(ev) || label.contains(ev.target)) return;
+      ev.preventDefault();
+      soltar(ev);
+    });
+    label.addEventListener('drop', soltar);
+    function soltar(ev) {
       const f = ev.dataTransfer && ev.dataTransfer.files;
       if (!f || !f.length) return;
       if (!EXT_OK.test(f[0].name)) { u.toast('Ese archivo no es CSV ni Excel (.xlsx).', { tipo: 'warn' }); return; }
       try { const dt = new DataTransfer(); dt.items.add(f[0]); input.files = dt.files; } catch (e) { try { input.files = f; } catch (e2) { return; } }
       input.dispatchEvent(new Event('change'));
-    });
+    }
     input.addEventListener('change', () => {
       const f = input.files[0];
       label.classList.toggle('has', !!f);
@@ -198,9 +225,13 @@
     const hojas = await RH.excelFilas.hojas(file);
     const visibles = hojas.filter(h => !h.oculta);
     const lista = visibles.length ? visibles : hojas;
-    const previa = selHoja.value;
+    // con el mismo archivo se respeta la hoja elegida; con otro, la activa del libro (la que Excel guarda como CSV)
+    const clave = [file.name, file.size, file.lastModified].join('|');
+    const previa = selHoja.dataset.archivo === clave ? selHoja.value : null;
+    const activa = lista.find(h => h.activa) || lista[0];
     selHoja.replaceChildren(...lista.map(h => new Option(h.nombre, h.nombre)));
-    if (lista.some(h => h.nombre === previa)) selHoja.value = previa;
+    selHoja.value = lista.some(h => h.nombre === previa) ? previa : activa.nombre;
+    selHoja.dataset.archivo = clave;
     wrapHoja.hidden = lista.length < 2;
     return RH.excelFilas.encabezados(file, { hoja: selHoja.value });
   }
@@ -219,7 +250,12 @@
     const base = r.base || 0;
     if (base && r.antesDeInicio / base > 0.3) avisos.push(Math.round(r.antesDeInicio / base * 100) + ' % de las filas quedó ANTES del lunes de la semana 1 (fila N/A). ¿El lunes de inicio corresponde a este archivo?');
     if (base && r.fechasMalas / base > 0.3) avisos.push(Math.round(r.fechasMalas / base * 100) + ' % de las filas no tiene una fecha legible (fila N/A). Revisa la columna de fecha y el formato Mes/Día o Día/Mes.');
-    if (r.maxSemana > 53) avisos.push('Hay datos en la semana ' + r.maxSemana + ': parece que el lunes de la semana 1 es de una temporada anterior.');
+    // pocas filas muy lejos de la temporada son fechas mal capturadas, no un lunes equivocado
+    const fuera = r.fuera || { filas: 0, semanas: [] };
+    const pocas = fuera.filas > 0 && fuera.filas <= Math.max(5, base * 0.02);
+    if (pocas) avisos.push(fuera.filas + ' fila(s) con fecha fuera de la temporada (semana ' + fuera.semanas.slice(0, 5).join(', ') + (fuera.semanas.length > 5 ? '…' : '') + '): probablemente fechas mal capturadas. Están en la tabla, pero el dashboard no las grafica.');
+    const maxSemana = pocas ? (r.maxEnRango || 0) : r.maxSemana;
+    if (maxSemana > 53) avisos.push('Hay datos en la semana ' + maxSemana + ': parece que el lunes de la semana 1 es de una temporada anterior.');
     return avisos;
   }
 
@@ -231,5 +267,15 @@
   // arrancan siempre igual que en el HTML original), así que se limpian.
   try { Object.keys(localStorage).filter(k => k.startsWith('rh-form-')).forEach(k => localStorage.removeItem(k)); } catch (e) { /* sin almacenamiento */ }
 
-  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, invalidarAlCambiar, avisosResultado };
+  /** Avisos al guardar sobre semanas imposibles: separa fechas mal capturadas de un lunes equivocado */
+  function avisoSemanas(snap) {
+    const semanas = Object.keys(snap.weeks || {});
+    const ult = ultimaSemana(semanas), nFuera = semanas.filter(w => +w > MAX_SEMANA).length;
+    const avisos = [];
+    if (ult > 53) avisos.push('Hay datos en la semana ' + ult + ': parece que el lunes de la semana 1 es de otra temporada.');
+    if (nFuera) avisos.push('Hay ' + nFuera + ' semana(s) fuera de rango (fechas mal capturadas): se guardan, pero el dashboard no las grafica.');
+    return avisos;
+  }
+
+  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, invalidarAlCambiar, avisosResultado, fueraDeRango, ultimaSemana, avisoSemanas, MAX_SEMANA };
 })(window.RH = window.RH || {});
