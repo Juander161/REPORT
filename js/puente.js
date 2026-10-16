@@ -78,8 +78,15 @@
       let snap;
       try { snap = opts.construir(); } catch (e) { estado.textContent = e.message; estado.className = 'save-msg err'; return; }
       if (!snap.season) { estado.textContent = 'Escribe la etiqueta de la temporada (por ejemplo, 2026).'; estado.className = 'save-msg err'; return; }
+      if (!Object.keys(snap.weeks || {}).length) { estado.textContent = 'No hay ninguna semana con datos (todas las filas quedaron en N/A): revisa el lunes de la semana 1 y vuelve a procesar.'; estado.className = 'save-msg err'; return; }
       const aviso = opts.validar ? opts.validar(snap) : null;
       if (aviso && !(await u.confirmar('Revisa antes de guardar', aviso, { aceptar: 'Guardar de todos modos' }))) return;
+      const gemela = (await RH.store.snapshots(snap.dataset)).find(s => !s.demo && s.week1 === snap.week1 && String(s.season) !== String(snap.season));
+      if (gemela) {
+        const msg = 'Ya existe la temporada «' + gemela.season + '» con el mismo lunes de semana 1 (' + u.fmtFecha(snap.week1) + '). ' +
+          'Si es la misma temporada, se reemplaza «' + gemela.season + '» por «' + snap.season + '» para no compararla contra sí misma.';
+        if (!(await u.confirmar('Misma temporada con otra etiqueta', msg, { aceptar: 'Reemplazar «' + gemela.season + '»' }))) return;
+      }
       const previo = await RH.store.snapshot(RH.store.idDe(snap.dataset, snap.season));
       if (previo && !previo.demo) {
         const msg = 'Ya existe la temporada ' + snap.season + ' en ' + (dash ? dash.titulo : snap.dataset) +
@@ -90,6 +97,7 @@
       }
       btn.disabled = true;
       try {
+        if (gemela) await RH.store.borrar(gemela.id);
         await guardar(snap);
         estado.textContent = 'Guardado: temporada ' + snap.season + ' en ' + (dash ? dash.titulo : snap.dataset) + '. Ya no necesitas volver a cargar este archivo.';
         estado.className = 'save-msg ok';
@@ -114,11 +122,18 @@
     };
   }
 
+  // lunes de semana 1 → etiqueta de una temporada ya guardada (para sugerir la misma etiqueta)
+  const etiquetaPorLunes = new Map();
+  let sugerirActual = null;
+
   /** Muestra las temporadas ya guardadas como chips que rellenan temporada y lunes */
   async function actualizarTemporadas(opts) {
     if (!opts.chips) return;
     const snaps = (await RH.store.snapshots(opts.dataset)).filter(s => !s.demo)
       .sort((a, b) => (b.week1 || '').localeCompare(a.week1 || ''));
+    etiquetaPorLunes.clear();
+    snaps.forEach(s => { if (s.week1 && !etiquetaPorLunes.has(s.week1)) etiquetaPorLunes.set(s.week1, String(s.season)); });
+    if (sugerirActual) sugerirActual();   // sin disparar eventos: no invalida un resultado ya procesado
     opts.chips.replaceChildren();
     if (!snaps.length) { opts.chips.appendChild(el('span', { class: 'muted' }, 'Ninguna todavía.')); return; }
     snaps.forEach(s => {
@@ -137,7 +152,7 @@
   function enlazarTemporada(inicio, temporada, info) {
     const sugerir = () => {
       const v = inicio.value;
-      if (!temporada.dataset.manual && /^\d{4}/.test(v)) temporada.value = v.slice(0, 4);
+      if (!temporada.dataset.manual && /^\d{4}/.test(v)) temporada.value = etiquetaPorLunes.get(v) || v.slice(0, 4);
       if (info) {
         if (!v) { info.textContent = ''; return; }
         const d = new Date(v + 'T00:00:00Z');
@@ -146,11 +161,14 @@
         info.className = 'hint' + (lunes ? '' : ' warn');
       }
     };
+    sugerirActual = sugerir;
     temporada.addEventListener('input', () => { temporada.dataset.manual = temporada.value ? '1' : ''; });
     inicio.addEventListener('input', sugerir);
     inicio.addEventListener('change', sugerir);
     sugerir();
   }
+
+  const EXT_OK = /\.(csv|txt|xlsx|xlsm|xltx|xltm|xls|xlsb)$/i;
 
   /** Arrastrar y soltar sobre la zona del archivo */
   function zonaArchivo(label, input, info) {
@@ -159,36 +177,59 @@
     label.addEventListener('drop', ev => {
       const f = ev.dataTransfer && ev.dataTransfer.files;
       if (!f || !f.length) return;
-      try { input.files = f; } catch (e) { return; }
+      if (!EXT_OK.test(f[0].name)) { u.toast('Ese archivo no es CSV ni Excel (.xlsx).', { tipo: 'warn' }); return; }
+      try { const dt = new DataTransfer(); dt.items.add(f[0]); input.files = dt.files; } catch (e) { try { input.files = f; } catch (e2) { return; } }
       input.dispatchEvent(new Event('change'));
     });
     input.addEventListener('change', () => {
       const f = input.files[0];
       label.classList.toggle('has', !!f);
-      if (info) info.textContent = f ? f.name + ' · ' + u.fmtTamano(f.size) + ' · modificado ' + u.fmtFechaHora(f.lastModified) : '';
+      if (info) info.textContent = f ? f.name + ' · ' + (esExcel(f) ? 'Excel' : 'CSV') + ' · ' + u.fmtTamano(f.size) + ' · modificado ' + u.fmtFechaHora(f.lastModified) : '';
     });
   }
 
-  function metaArchivo(f) {
-    return f ? { nombre: f.name, tam: f.size, modificado: f.lastModified } : null;
+  function esExcel(f) { return !!f && /\.(xlsx|xlsm|xltx|xltm|xls|xlsb)$/i.test(f.name || ''); }
+
+  /**
+   * Prepara un archivo de Excel: llena el selector de hojas (visible solo si hay más
+   * de una) y devuelve el encabezado de la hoja elegida, como textos sin normalizar.
+   */
+  async function prepararExcel(file, selHoja, wrapHoja) {
+    const hojas = await RH.excelFilas.hojas(file);
+    const visibles = hojas.filter(h => !h.oculta);
+    const lista = visibles.length ? visibles : hojas;
+    const previa = selHoja.value;
+    selHoja.replaceChildren(...lista.map(h => new Option(h.nombre, h.nombre)));
+    if (lista.some(h => h.nombre === previa)) selHoja.value = previa;
+    wrapHoja.hidden = lista.length < 2;
+    return RH.excelFilas.encabezados(file, { hoja: selHoja.value });
   }
 
-  /** Recuerda valores de campos simples entre sesiones (por reporte) */
-  function recordar(clave, ids) {
-    const guardado = u.lsGet('rh-form-' + clave, {});
-    ids.forEach(id => {
-      const n = document.getElementById(id);
-      if (!n) return;
-      if (guardado[id] != null) {
-        if (n.type === 'checkbox') n.checked = !!guardado[id]; else n.value = guardado[id];
-      }
-      n.addEventListener('change', () => {
-        const g = u.lsGet('rh-form-' + clave, {});
-        g[id] = n.type === 'checkbox' ? n.checked : n.value;
-        u.lsSet('rh-form-' + clave, g);
-      });
+  /** Si la configuración cambia después de procesar, el resultado ya no corresponde: se invalida */
+  function invalidarAlCambiar(nodos, cb) {
+    nodos.filter(Boolean).forEach(n => {
+      n.addEventListener('input', cb);
+      n.addEventListener('change', cb);
     });
   }
 
-  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, recordar };
+  /** Avisos de configuración sospechosa (lunes de inicio de otra temporada, fechas ilegibles) */
+  function avisosResultado(r) {
+    const avisos = [];
+    const base = r.base || 0;
+    if (base && r.antesDeInicio / base > 0.3) avisos.push(Math.round(r.antesDeInicio / base * 100) + ' % de las filas quedó ANTES del lunes de la semana 1 (fila N/A). ¿El lunes de inicio corresponde a este archivo?');
+    if (base && r.fechasMalas / base > 0.3) avisos.push(Math.round(r.fechasMalas / base * 100) + ' % de las filas no tiene una fecha legible (fila N/A). Revisa la columna de fecha y el formato Mes/Día o Día/Mes.');
+    if (r.maxSemana > 53) avisos.push('Hay datos en la semana ' + r.maxSemana + ': parece que el lunes de la semana 1 es de una temporada anterior.');
+    return avisos;
+  }
+
+  function metaArchivo(f, hoja) {
+    return f ? { nombre: f.name, tam: f.size, modificado: f.lastModified, tipo: esExcel(f) ? 'excel' : 'csv', hoja: hoja || null } : null;
+  }
+
+  // Versiones anteriores guardaban valores del formulario; ya no se usan (los campos
+  // arrancan siempre igual que en el HTML original), así que se limpian.
+  try { Object.keys(localStorage).filter(k => k.startsWith('rh-form-')).forEach(k => localStorage.removeItem(k)); } catch (e) { /* sin almacenamiento */ }
+
+  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, invalidarAlCambiar, avisosResultado };
 })(window.RH = window.RH || {});

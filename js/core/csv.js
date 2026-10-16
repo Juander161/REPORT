@@ -56,24 +56,41 @@
     return { semana: Math.floor(dias / 7) + 1, motivo: null };
   }
 
-  /** Lee solo los encabezados (en mayúsculas) */
-  async function encabezados(file) {
+  const esExcel = f => !!(RH.excelFilas && /\.(xlsx|xlsm|xltx|xltm|xls|xlsb)$/i.test((f && f.name) || ''));
+
+  /** Lee solo los encabezados (en mayúsculas). Acepta CSV o Excel (.xlsx) */
+  async function encabezados(file, opts) {
+    if (esExcel(file)) return (await RH.excelFilas.encabezados(file, opts)).map(c => String(c).trim().toUpperCase());
     const txt = await file.slice(0, 300000).text();
-    const primera = txt.split(/\r?\n/)[0].replace(/^﻿/, '');
+    const primera = txt.split(/\r?\n/)[0].replace(/^\uFEFF/, '');
     return splitLinea(primera, detectarDelim(primera)).map(c => c.trim().toUpperCase());
   }
 
   /**
-   * Recorre el CSV fila por fila sin cargarlo completo en memoria.
+   * Recorre el CSV (o el Excel .xlsx) fila por fila sin cargarlo completo en memoria.
    * h.alEncabezado(header[])  · h.alFila(row[], numeroDeFila)  · h.alProgreso(leidos, total, filas)
+   * h.hoja (Excel, opcional) · h.columnasFecha (Excel: columnas cuyos números de serie son fechas)
    */
   async function leer(file, h) {
+    if (esExcel(file)) {
+      let header = null, filas = 0;
+      await RH.excelFilas.leer(file, {
+        hoja: h.hoja, columnasFecha: h.columnasFecha,
+        alFila(r) {
+          if (!header) { header = r.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
+          filas++;
+          h.alFila(r, filas);
+        },
+        alProgreso(leidos, total) { if (h.alProgreso) h.alProgreso(leidos, total, filas); }
+      });
+      return { filas, header };
+    }
     const reader = file.stream().getReader();
     const dec = new TextDecoder('utf-8');
     let delim = null, field = '', row = [], inQ = false, pend = false, leidos = 0, filas = 0, header = null;
     const emitir = r => {
       if (r.length === 1 && r[0] === '') return;
-      if (!header) { header = r.map(c => c.replace(/^﻿/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
+      if (!header) { header = r.map(c => c.replace(/^\uFEFF/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
       filas++;
       h.alFila(r, filas);
     };

@@ -121,3 +121,9 @@ tr.total td { font-weight: 700; background: var(--surface-3) !important; border-
   .cols-2 { grid-template-columns: 1fr; }
   .drop { flex-direction: column; align-items: flex-start; }
 }
+
+/* avisos de configuración, configuración usada y selector de hoja de Excel */
+.usado { font-size: 12.5px; color: var(--text-2); margin: 6px 0 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.usado:empty { display: none; }
+.aviso { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn); font-weight: 600; font-size: 13px; }
+.fld-hoja { margin-top: 12px; max-width: 380px; }

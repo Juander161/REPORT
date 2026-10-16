@@ -192,7 +192,7 @@
       } catch (e) { return false; }
     },
     nombreArchivo(s) {
-      return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+      return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'archivo';
     },
 

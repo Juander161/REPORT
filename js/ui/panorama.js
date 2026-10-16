@@ -62,24 +62,24 @@
     const cur = temps[0];
     const prev = temps.find(s => s.id !== cur.id && (s.week1 || '') < (cur.week1 || '')) || null;
     const metrica = dash.metricas.find(m => m.id === dash.principal);
-    const opts = {};
-    (dash.opciones || []).forEach(o => { opts[o.id] = !!(cur.meta && cur.meta.config && cur.meta.config[o.id]); });
+    const optsDe = s => { const o = {}; (dash.opciones || []).forEach(op => { o[op.id] = !!(s && s.meta && s.meta.config && s.meta.config[op.id]); }); return o; };
+    const opts = optsDe(cur), optsP = optsDe(prev);
     const ult = M.ultimaSemana(cur), ultP = M.ultimaSemana(prev);
     const ws = u.rango(1, ult);
     const tc = M.total(cur, metrica, ws, null, opts);
-    const tp = prev ? M.total(prev, metrica, ws.filter(w => w <= ultP), null, opts) : null;
+    const tp = prev ? M.total(prev, metrica, ws.filter(w => w <= ultP), null, optsP) : null;
     const p = tc && tp ? u.variacion(tc.v, tp.v) : null;
 
     card.appendChild(el('div', { class: 'pano-hero' },
-      el('div', { class: 'pano-l' }, metrica.etiqueta + ' · temporada ' + cur.season + ' a la fecha'),
+      el('div', { class: 'pano-l' }, metrica.etiqueta + ' · temporada ' + cur.season + ' a la fecha (semanas 1–' + ult + ')'),
       el('div', { class: 'pano-v' }, u.fmtInt(tc && tc.v)),
       p != null ? el('div', { class: 'kpi-d ' + (p > 0 ? 'up' : p < 0 ? 'down' : 'flat') },
         el('span', { class: 'kpi-arrow', 'aria-hidden': 'true' }, p > 0 ? '▲' : p < 0 ? '▼' : '■'),
-        el('span', null, u.fmtSignedPct(p)), el('span', { class: 'kpi-ds' }, 'vs ' + prev.season + ' (' + u.fmtInt(tp.v) + ')')) :
+        el('span', null, u.fmtSignedPct(p)), el('span', { class: 'kpi-ds' }, 'vs ' + prev.season + ' a la misma semana (' + u.fmtInt(tp.v) + ')')) :
         el('div', { class: 'kpi-n' }, prev ? '' : 'Agrega la temporada anterior para comparar')));
 
     const maxW = Math.max(ult, ultP);
-    const serie = s => s ? u.rango(1, maxW).map(w => { const m = M.medir(metrica, M.agregado(s, w, null), opts); return m ? m.v : null; }) : null;
+    const serie = s => s ? u.rango(1, maxW).map(w => { const m = M.medir(metrica, M.agregado(s, w, null), optsDe(s)); return m ? m.v : null; }) : null;
     const sc = serie(cur), sp = serie(prev);
     card.appendChild(sparkline(sc, sp, M.semanaHoy(cur), 'int'));
     card.appendChild(el('div', { class: 'spark-lg' },
@@ -106,7 +106,7 @@
     }
     const mPart = dash.participacion ? dash.metricas.find(m => m.id === dash.participacion) : null;
     if (mPart) {
-      const sh = M.total(cur, mPart, ws, null, opts), shp = prev ? M.total(prev, mPart, ws.filter(w => w <= ultP), null, opts) : null;
+      const sh = M.total(cur, mPart, ws, null, opts), shp = prev ? M.total(prev, mPart, ws.filter(w => w <= ultP), null, optsP) : null;
       const dd = sh && shp && sh.v != null && shp.v != null ? sh.v - shp.v : null;
       filas.appendChild(el('div', { class: 'pano-row' },
         el('span', null, mPart.etiqueta),

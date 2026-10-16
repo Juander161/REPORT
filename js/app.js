@@ -51,7 +51,10 @@
     return { hash: h, seccion: seccion || 'panorama', id: id ? decodeURIComponent(id) : null };
   }
 
-  function navegar() {
+  async function navegar() {
+    // relee la base en cada cambio de pantalla: así nada queda desactualizado aunque el
+    // navegador no entregue los avisos entre pestañas (por ejemplo, al abrir desde una carpeta)
+    try { snaps = await RH.store.snapshots(); } catch (e) { /* se usa lo último leído */ }
     const r = ruta();
     const cont = u.$('#views');
     const marcosCont = u.$('#frames');
@@ -240,6 +243,7 @@
       const d = ev.data || {};
       if (d.rh === 'navegar' && typeof d.hash === 'string' && d.hash.startsWith('#/')) location.hash = d.hash;
       if (d.rh === 'guardado') {
+        refrescar();
         const dash = reg.dashboardDeDataset(d.dataset);
         u.toast('Temporada ' + d.season + ' guardada en ' + (dash ? dash.titulo : d.dataset) + '.', {
           tipo: 'ok', accion: dash ? { texto: 'Ver dashboard', fn: () => { location.hash = '#/dash/' + dash.id; } } : null
@@ -268,6 +272,16 @@
     estadoRed();
     mensajes();
     window.addEventListener('rh-vinculo', estadoVinculo);
+    window.addEventListener('rh-sync-cambios', ev => {
+      const x = ev.detail || {};
+      const partes = [];
+      if (x.nuevos) partes.push(x.nuevos + ' nueva(s)');
+      if (x.actualizados) partes.push(x.actualizados + ' actualizada(s)');
+      if (x.borrados) partes.push(x.borrados + ' eliminada(s)');
+      u.toast('Cambios traídos de ' + x.nombre + ' (otra persona o edición en Excel): ' + partes.join(', ') + '.' +
+        (x.otraConfig && x.otraConfig.length ? ' OJO: ' + x.otraConfig.join(', ') + ' se procesó con otro lunes de inicio u otras opciones; revisa su «Tabla del reporte».' : ''), { tipo: x.otraConfig && x.otraConfig.length ? 'warn' : 'info', ms: 9000 });
+    });
+    window.addEventListener('focus', () => refrescar());
 
     try {
       snaps = await RH.store.snapshots();

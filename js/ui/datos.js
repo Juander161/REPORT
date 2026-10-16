@@ -56,7 +56,7 @@
       }
       const cardV = el('section', { class: 'card span-4 db-card' },
         el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, 'Excel vinculado'), el('p', { class: 'card-s' }, 'Sincronización automática')), el('span', { class: 'pill ' + estadoCls }, estadoTxt)),
-        el('p', null, 'La app lee el archivo al abrir y lo reescribe cada vez que guardas una temporada. Guárdalo en una carpeta de ', el('strong', null, 'OneDrive, SharePoint o Teams'), ' para que todo el equipo comparta la misma base.'),
+        el('p', null, 'La app lee el archivo al abrir, lo revisa cada 20 segundos mientras está abierta y lo reescribe cada vez que guardas una temporada. Guárdalo en una carpeta de ', el('strong', null, 'OneDrive, SharePoint o Teams'), ' para que todo el equipo comparta la misma base: los cambios de otra persona llegan en cuanto OneDrive sincroniza el archivo (normalmente segundos o pocos minutos).'),
         v.nombre ? el('div', { class: 'file-chip' }, el('span', { class: 'fc-ico', 'aria-hidden': 'true' }, 'X'), el('div', null, el('strong', null, v.nombre), el('div', { class: 'muted small' }, v.ultimo ? 'Última sincronización: ' + u.fmtFechaHora(v.ultimo) : 'Pendiente de sincronizar'))) : null,
         v.error ? el('p', { class: 'error-text' }, v.error) : null,
         accionesV);
@@ -69,7 +69,7 @@
         if (!f) return;
         try {
           const r = await RH.dbx.importar(f);
-          u.toast('Importado: ' + r.nuevos + ' nueva(s), ' + r.actualizados + ' actualizada(s)' + (r.iguales ? ', ' + r.iguales + ' sin cambios (la versión local es igual o más reciente)' : '') + '.', { tipo: 'ok', ms: 7000 });
+          u.toast('Importado: ' + r.nuevos + ' nueva(s), ' + r.actualizados + ' actualizada(s)' + (r.borrados ? ', ' + r.borrados + ' eliminada(s)' : '') + (r.iguales ? ', ' + r.iguales + ' sin cambios (la versión local es igual o más reciente)' : '') + '.', { tipo: 'ok', ms: 7000 });
         } catch (e) { u.toast(e.message, { tipo: 'error' }); }
       });
       const cardX = el('section', { class: 'card span-4 db-card' },
@@ -90,7 +90,7 @@
             el('li', null, 'Pulsa «Descargar base en Excel».'),
             el('li', null, 'Sube el archivo al repositorio como ', el('code', null, 'data/REPORT_DB.xlsx'), ' (o pídeselo a quien administra la app).'))),
         el('div', { class: 'card-actions' }, btn('Buscar actualización', async () => {
-          const r = await RH.dbx.cargarCompartida({ forzar: true });
+          const r = await RH.dbx.cargarCompartida();
           if (r.estado === 'ok') u.toast('Base compartida: ' + r.nuevos + ' nueva(s), ' + r.actualizados + ' actualizada(s).', { tipo: 'ok' });
           else if (r.estado === 'ausente') u.toast('Todavía no hay una base compartida publicada.', { tipo: 'info' });
           else if (r.estado === 'sin-conexion') u.toast('Sin conexión: no se pudo revisar la base compartida.', { tipo: 'warn' });

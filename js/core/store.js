@@ -101,7 +101,9 @@
       // las "tumbas" evitan que la base compartida vuelva a traer lo que se borró a propósito
       const tumbas = await store.ajuste('tombstones', {});
       const ahora = new Date().toISOString();
-      lista.forEach((snap, i) => { if (snap && !snap.demo) tumbas[ids[i]] = ahora; });
+      lista.forEach((snap, i) => {
+        if (snap && !snap.demo) tumbas[ids[i]] = (opts.tumbas && opts.tumbas[ids[i]]) || ahora;
+      });
       await store.fijar('tombstones', tumbas);
       avisar({ tipo: 'snapshots', ids, borrado: true, origen: opts.origen || 'local' });
     },

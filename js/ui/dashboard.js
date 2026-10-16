@@ -11,11 +11,21 @@
   ];
   const MAX_TIPOS_COLOR = 7;
 
+  const ESTADO_INICIAL = {
+    cur: null, prev: null, metrica: null, modo: 'rango', preset: 'fecha', desde: 1, hasta: 1,
+    semana: null, tiposExcluidos: [], opciones: {}, vista: 'semanal', varModo: 'abs', calor: 'cur', mezclaPct: false, tablaTemp: 'cur'
+  };
+  // Los filtros duran solo mientras la app está abierta (sessionStorage): al abrirla de nuevo
+  // todo arranca igual que los reportes, sin filtros "escondidos" de otra sesión.
   function estadoDe(id) {
-    return Object.assign({
-      cur: null, prev: null, metrica: null, modo: 'rango', preset: 'fecha', desde: 1, hasta: 1,
-      semana: null, tipos: null, opciones: {}, vista: 'semanal', varModo: 'abs', calor: 'cur', mezclaPct: false
-    }, u.lsGet('rh-dash-' + id, {}));
+    try { localStorage.removeItem('rh-dash-' + id); } catch (e) { /* versiones anteriores lo guardaban aquí */ }
+    let guardado = {};
+    try { guardado = JSON.parse(sessionStorage.getItem('rh-dash-' + id) || '{}') || {}; } catch (e) { guardado = {}; }
+    return Object.assign({}, ESTADO_INICIAL, guardado);
+  }
+  function filtrosActivos(e) {
+    return e.cur || e.prev || (e.preset && e.preset !== 'fecha') || e.modo === 'semana' || (e.tiposExcluidos && e.tiposExcluidos.length) ||
+      Object.keys(e.opciones || {}).length;
   }
 
   // =====================================================================================
@@ -29,23 +39,28 @@
     let prev = null;
     if (e.prev !== 'none') {
       prev = temporadas.find(s => s.id === e.prev && s.id !== cur.id) ||
-        temporadas.find(s => s.id !== cur.id && (s.week1 || '') < (cur.week1 || '')) ||
-        temporadas.find(s => s.id !== cur.id) || null;
+        temporadas.find(s => s.id !== cur.id && (s.week1 || '') < (cur.week1 || '')) || null;
     }
     const metrica = dash.metricas.find(m => m.id === e.metrica) || dash.metricas.find(m => m.id === dash.principal) || dash.metricas[0];
     const principal = dash.metricas.find(m => m.id === dash.principal) || dash.metricas[0];
     const metricaConteo = metrica.tipo === 'ratio' ? principal : metrica;
-    const opts = {};
-    (dash.opciones || []).forEach(o => {
-      opts[o.id] = (e.opciones && o.id in e.opciones) ? !!e.opciones[o.id] : !!(cur.meta && cur.meta.config && cur.meta.config[o.id]);
-    });
+    // cada temporada se calcula con las opciones con que se procesó (igual que su HTML),
+    // salvo que el usuario fuerce una opción en el dashboard (entonces aplica a ambas)
+    const override = {};
+    (dash.opciones || []).forEach(o => { if (e.opciones && o.id in e.opciones) override[o.id] = !!e.opciones[o.id]; });
+    const optsDe = s => {
+      const o = {};
+      (dash.opciones || []).forEach(op => { o[op.id] = op.id in override ? override[op.id] : !!(s && s.meta && s.meta.config && s.meta.config[op.id]); });
+      return o;
+    };
+    const opts = optsDe(cur), optsPrev = prev ? optsDe(prev) : null;
+    const opcionesDistintas = !!prev && (dash.opciones || []).filter(op => opts[op.id] !== optsPrev[op.id]);
 
     const tiposTodos = M.tiposDe(cur, prev);
+    // se guardan los tipos EXCLUIDOS: un tipo nuevo que aparezca en un CSV posterior entra solo
     let tiposSel = null;
-    if (Array.isArray(e.tipos) && e.tipos.length) {
-      tiposSel = new Set(e.tipos.filter(t => tiposTodos.includes(t)));
-      if (!tiposSel.size) tiposSel = null;
-    }
+    const excl = (Array.isArray(e.tiposExcluidos) ? e.tiposExcluidos : []).filter(t => tiposTodos.includes(t));
+    if (excl.length && excl.length < tiposTodos.length) tiposSel = new Set(tiposTodos.filter(t => !excl.includes(t)));
 
     const ultCur = M.ultimaSemana(cur), ultPrev = M.ultimaSemana(prev);
     const maxW = Math.max(ultCur, ultPrev, 1);
@@ -90,14 +105,15 @@
 
     // series
     const mCur = M.serie(cur, metrica, contexto, tiposSel, opts);
-    const mPrev = prev ? M.serie(prev, metrica, contexto, tiposSel, opts) : null;
+    const mPrev = prev ? M.serie(prev, metrica, contexto, tiposSel, optsPrev) : null;
     const v = arr => arr.map(m => m ? m.v : null);
     const vCur = v(mCur), vPrev = mPrev ? v(mPrev) : null;
     const desdeCtx = modo === 'semana' ? 1 : desde;
     const acCur = v(M.acumulada(mCur, metrica)), acPrev = mPrev ? v(M.acumulada(mPrev, metrica)) : null;
 
     const totCur = M.total(cur, metrica, prev ? semK : selec.filter(w => w <= ultCur), tiposSel, opts);
-    const totPrev = prev ? M.total(prev, metrica, semK, tiposSel, opts) : null;
+    const totPrev = prev ? M.total(prev, metrica, semK, tiposSel, optsPrev) : null;
+    const totPrevCompleta = prev ? M.total(prev, metrica, u.rango(1, Math.max(ultPrev, 1)), tiposSel, optsPrev) : null;
 
     // ---------------- specs de gráficas
     const base = { categorias, categoriasLargas, notas, ejeX: 'Semana', resaltar };
@@ -142,7 +158,7 @@
     const filasTipo = tiposVisibles.map(t => ({
       tipo: t,
       cur: M.porTipo(cur, metrica, semTipo, t, opts),
-      prev: prev ? M.porTipo(prev, metrica, semTipo, t, opts) : null
+      prev: prev ? M.porTipo(prev, metrica, semTipo, t, optsPrev) : null
     })).sort((a, b) => ((b.cur && b.cur.v) || 0) - ((a.cur && a.cur.v) || 0));
     const specTipo = {
       id: 'tipos', tipo: 'barH',
@@ -168,7 +184,7 @@
         subtitulo: (mPart.descripcion ? mPart.descripcion + ' · ' : '') + periodo + ' · ' + comparando,
         formato: fP, delta: !!prev,
         series: [
-          prev && { nombre: nombrePrev, valores: v(M.serie(prev, mPart, contexto, tiposSel, opts)), rol: 'prev' },
+          prev && { nombre: nombrePrev, valores: v(M.serie(prev, mPart, contexto, tiposSel, optsPrev)), rol: 'prev' },
           { nombre: nombreCur, valores: v(M.serie(cur, mPart, contexto, tiposSel, opts)), rol: 'cur' }
         ].filter(Boolean),
         archivo: dash.titulo + '_participacion'
@@ -199,7 +215,7 @@
 
     // mapa de calor (tipos × semanas)
     const calorTipos = tiposVisibles.slice().sort((a, b) => rankTipos.indexOf(a) - rankTipos.indexOf(b));
-    const matriz = s => calorTipos.map(t => contexto.map(w => { const m = M.medir(metrica, M.agregadoTipo(s, w, t), opts); return m ? m.v : null; }));
+    const matriz = s => { const o = optsDe(s); return calorTipos.map(t => contexto.map(w => { const m = M.medir(metrica, M.agregadoTipo(s, w, t), o); return m ? m.v : null; })); };
     const calor = {
       tipos: calorTipos, semanas: contexto, categorias, categoriasLargas,
       cur: matriz(cur), prev: prev ? matriz(prev) : null,
@@ -207,13 +223,16 @@
     };
 
     const vm = {
-      dash, temporadas, cur, prev, metrica, metricaConteo, principal, opts, tiposTodos, tiposSel, filtroTipos,
+      dash, temporadas, cur, prev, metrica, metricaConteo, principal, opts, optsPrev, optsDe, override, opcionesDistintas, totPrevCompleta, tiposTodos, tiposSel, filtroTipos,
       ultCur, ultPrev, maxW, parcial, completa, modo, desde, hasta, semana, selec, contexto, semK, resaltar,
       periodo, comparando, nombreCur, nombrePrev, fmtM, vCur, vPrev, acCur, acPrev, totCur, totPrev,
       filasTipo, rankTipos, colorTipo,
       specs: { semanal: specSemanal, variacion: specVar, tipos: specTipo, participacion: specPart, mezcla: specMezcla },
       calor
     };
+    const naM = metrica.tipo !== 'ratio' && cur.na ? M.medir(metrica, M.agregado(cur, 'N/A', tiposSel), opts) : null;
+    vm.naCur = naM && naM.v ? naM.v : 0;
+    vm.fueraCur = M.semanasFuera(cur).length;
     vm.kpis = kpis(vm);
     vm.hallazgos = hallazgos(vm);
     vm.detalle = detalle(vm);
@@ -239,7 +258,7 @@
   // KPIs
   // =====================================================================================
   function kpis(vm) {
-    const { cur, prev, metrica, fmtM, opts, tiposSel, dash } = vm;
+    const { cur, prev, metrica, fmtM, opts, optsPrev, tiposSel, dash } = vm;
     const out = [];
     const mPart = dash.participacion && metrica.id !== dash.participacion ? dash.metricas.find(m => m.id === dash.participacion) : null;
 
@@ -249,9 +268,15 @@
         hero: true, etiqueta: metrica.etiqueta + ' · ' + cur.season, valor: vc, formato: fmtM,
         delta: prev ? delta(vc, vp, fmtM) : null,
         nota: (prev ? 'vs ' + prev.season + ' en las mismas ' + vm.semK.length + ' semana' + (vm.semK.length === 1 ? '' : 's') + ' (' + rangoTxt(vm.semK) + ')' : vm.periodo) +
-          (vm.parcial && vm.selec.includes(vm.parcial.semana) ? ' · incluye S' + vm.parcial.semana + ' en curso' : '')
+          (vm.parcial && vm.selec.includes(vm.parcial.semana) ? ' · incluye S' + vm.parcial.semana + ' en curso' : '') +
+          (vm.naCur ? ' · sin contar la fila N/A (' + G.fmtValor(vm.naCur, fmtM) + '; ver «Tabla del reporte»)' : '')
       });
-      if (prev) out.push({ etiqueta: 'Temporada ' + prev.season, valor: vp, formato: fmtM, nota: 'Mismo periodo · semanas ' + rangoTxt(vm.semK) });
+      if (prev) {
+        const comp = vm.totPrevCompleta && vm.totPrevCompleta.v;
+        const masSemanas = vm.ultPrev > (vm.semK.length ? vm.semK[vm.semK.length - 1] : 0);
+        out.push({ etiqueta: 'Temporada ' + prev.season + ' · mismas semanas', valor: vp, formato: fmtM,
+          nota: 'Mismo periodo · semanas ' + rangoTxt(vm.semK) + (masSemanas && comp != null ? ' · temporada completa (S1–S' + vm.ultPrev + '): ' + G.fmtValor(comp, fmtM) : '') });
+      }
 
       const semCur = (prev ? vm.semK : vm.selec.filter(w => w <= vm.ultCur));
       if (metrica.tipo !== 'ratio' && semCur.length) {
@@ -265,15 +290,15 @@
       if (mejor) out.push({ etiqueta: 'Semana más alta · ' + cur.season, valorTexto: 'S' + mejor.w, nota: G.fmtValor(mejor.v, fmtM) + ' · ' + u.fmtFecha(u.weekMonday(cur.week1, mejor.w)) });
 
       if (mPart) {
-        const sC = M.total(cur, mPart, semCur, tiposSel, opts), sP = prev ? M.total(prev, mPart, vm.semK, tiposSel, opts) : null;
+        const sC = M.total(cur, mPart, semCur, tiposSel, opts), sP = prev ? M.total(prev, mPart, vm.semK, tiposSel, optsPrev) : null;
         out.push({ etiqueta: mPart.etiqueta, valor: sC ? sC.v : null, formato: 'pct', delta: prev ? delta(sC && sC.v, sP && sP.v, 'pct') : null, nota: mPart.descripcion || '' });
       }
 
       // proyección de cierre según la curva de la temporada anterior
       if (prev && metrica.tipo !== 'ratio' && vm.completa >= 4 && vm.ultPrev > vm.completa) {
         const ws = u.rango(1, vm.completa);
-        const ytdC = M.total(cur, metrica, ws, tiposSel, opts), ytdP = M.total(prev, metrica, ws, tiposSel, opts);
-        const totP = M.total(prev, metrica, u.rango(1, vm.ultPrev), tiposSel, opts);
+        const ytdC = M.total(cur, metrica, ws, tiposSel, opts), ytdP = M.total(prev, metrica, ws, tiposSel, optsPrev);
+        const totP = M.total(prev, metrica, u.rango(1, vm.ultPrev), tiposSel, optsPrev);
         if (ytdC && ytdP && totP && ytdP.v > 0) {
           const proy = ytdC.v * totP.v / ytdP.v;
           out.push({
@@ -303,7 +328,7 @@
         out.push({ etiqueta: 'Posición en la temporada', valorTexto: '#' + pos, nota: 'de ' + valores.length + ' semanas con datos en ' + cur.season });
       }
       if (mPart) {
-        const sC = M.medir(mPart, M.agregado(cur, w, tiposSel), opts), sP = prev ? M.medir(mPart, M.agregado(prev, w, tiposSel), opts) : null;
+        const sC = M.medir(mPart, M.agregado(cur, w, tiposSel), opts), sP = prev ? M.medir(mPart, M.agregado(prev, w, tiposSel), optsPrev) : null;
         out.push({ etiqueta: mPart.etiqueta, valor: sC ? sC.v : null, formato: 'pct', delta: prev ? delta(sC && sC.v, sP && sP.v, 'pct') : null, nota: mPart.descripcion || '' });
       }
       const ac = vm.acCur[i], ap = vm.acPrev ? vm.acPrev[i] : null;
@@ -419,7 +444,7 @@
     [['Comparación', prev ? 'Temporada ' + cur.season + ' vs Temporada ' + prev.season : 'Temporada ' + cur.season],
       ['Periodo', vm.periodo], ['Métrica', metrica.etiqueta + (metrica.descripcion ? ' (' + metrica.descripcion + ')' : '')],
       ['Tipos de asignación', vm.tiposSel ? [...vm.tiposSel].join(', ') : 'Todos'],
-      ...(dash.opciones || []).map(o => [o.etiqueta, vm.opts[o.id] ? 'Sí' : 'No'])
+      ...(dash.opciones || []).map(o => [o.etiqueta, cur.season + ': ' + (vm.opts[o.id] ? 'Sí' : 'No') + (prev ? ' · ' + prev.season + ': ' + (vm.optsPrev[o.id] ? 'Sí' : 'No') : '')])
     ].forEach(([k, v]) => R.fila([null, { v: k, s: 'kpiLabel' }, { v: v, s: 'normal' }]));
     R.vacia();
     R.fila([null, 'Indicadores'], { estilo: 'seccion' });
@@ -483,7 +508,7 @@
     const d1 = r0 + 1, d2 = r0 + vm.detalle.length;
     if (!pct && vm.detalle.length > 1) {
       const rt = d2 + 1, xr = rt + 1;
-      const fila = [{ v: 'Total', s: 'totTexto' }, { v: '', s: 'totTexto' }];
+      const fila = [{ v: 'Total semanas mostradas (sin N/A)', s: 'totTexto' }, { v: '', s: 'totTexto' }];
       if (prev) fila.push({ v: '', s: 'totTexto' }, { v: u.sum(vm.detalle.map(d => d.prev)), f: 'SUM(' + C(cP) + (d1 + 1) + ':' + C(cP) + (d2 + 1) + ')', s: 'totInt' });
       fila.push({ v: u.sum(vm.detalle.map(d => d.cur)), f: 'SUM(' + C(cC) + (d1 + 1) + ':' + C(cC) + (d2 + 1) + ')', s: 'totInt' });
       if (prev) {
@@ -538,6 +563,27 @@
     });
     H.ancho([26, ...vm.calor.semanas.map(() => pct ? 8 : 9)]);
     H.congelar(0, 1);
+
+    // --- tabla idéntica a la del HTML de cada temporada (con fila N/A y TOTAL)
+    const fnTabla = RH.tablas && RH.tablas[dash.dataset];
+    if (fnTabla) {
+      [cur, prev].filter(Boolean).forEach(snap => {
+        const t = fnTabla(snap, !!vm.optsDe(snap).incluirCeros);
+        const T = wb.hoja('Reporte ' + snap.season, { grid: false, tab: 'C9A227' });
+        T.fila(['Tabla del reporte · temporada ' + snap.season + ' (idéntica a la del HTML)'], { estilo: 'titulo', alto: 26 });
+        T.fila(['Lunes de la semana 1: ' + u.fmtFecha(snap.week1) + ' · Incluir filas con todo en 0: ' + (vm.optsDe(snap).incluirCeros ? 'Sí' : 'No') + (snap.meta && snap.meta.archivo ? ' · Archivo: ' + snap.meta.archivo.nombre : '')], { estilo: 'sub' });
+        T.fila([t.concilia], { estilo: 'nota' });
+        T.vacia();
+        const [encT, ...filasT] = t.lineas;
+        T.fila(encT, { estilo: 'header', alto: 34 });
+        filasT.forEach((f, k) => {
+          const tot = k === filasT.length - 1;
+          T.fila(f.map((c, i) => i < 2 ? { v: c, s: tot ? 'totTexto' : 'texto' } : { v: c, s: tot ? 'totInt' : 'int' }));
+        });
+        T.ancho([14, 14, ...encT.slice(2).map(h => Math.max(12, Math.min(26, String(h).length + 2)))]);
+        T.congelar(5, 2);
+      });
+    }
 
     // --- datos crudos (pivotables)
     const D = wb.hoja('Datos', { tab: '7F93B0' });
@@ -652,7 +698,7 @@
     let e = estadoDe(dash.id);
     let snaps = [];
     let vm = null;
-    const guardar = () => u.lsSet('rh-dash-' + dash.id, e);
+    const guardar = () => { try { sessionStorage.setItem('rh-dash-' + dash.id, JSON.stringify(e)); } catch (err) { /* sin almacenamiento */ } };
 
     const raiz = el('div', { class: 'dash' });
     cont.replaceChildren(raiz);
@@ -704,7 +750,8 @@
     const cMezcla = tarjeta({ id: 'mezcla', span: 6 });
     const cCalor = el('section', { class: 'card span-12 heat-card' });
     const cDet = el('section', { class: 'card span-12 table-card' });
-    grid.append(cSemanal.el, cHall, cVar.el, cTipo.el, cPart.el, cMezcla.el, cCalor, cDet);
+    const cRep = el('section', { class: 'card span-12 table-card rep-card', id: 'card-tabla-reporte' });
+    grid.append(cSemanal.el, cHall, cVar.el, cTipo.el, cPart.el, cMezcla.el, cCalor, cDet, cRep);
 
     // controles dentro de tarjetas
     function ponerControles() {
@@ -765,7 +812,7 @@
           cerrarMenus();
           const m = el('div', { class: 'menu menu-check', role: 'menu', onclick: ev2 => ev2.stopPropagation() });
           const sel = new Set(vm.tiposSel ? [...vm.tiposSel] : vm.tiposTodos);
-          const aplicar = () => { e.tipos = sel.size === vm.tiposTodos.length ? null : [...sel]; cambio(); };
+          const aplicar = () => { e.tiposExcluidos = vm.tiposTodos.filter(t => !sel.has(t)); cambio(); };
           m.appendChild(el('div', { class: 'menu-tools' },
             el('button', { type: 'button', onclick: () => { vm.tiposTodos.forEach(t => sel.add(t)); u.$$('input', m).forEach(i => { i.checked = true; }); aplicar(); } }, 'Todos'),
             el('button', { type: 'button', onclick: () => { sel.clear(); sel.add(vm.rankTipos[0] || vm.tiposTodos[0]); u.$$('input', m).forEach(i => { i.checked = sel.has(i.value); }); aplicar(); } }, 'Solo el principal')));
@@ -788,10 +835,18 @@
         filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Opciones'), el('label', { class: 'switch', title: o.ayuda || '' }, cb, el('span', { class: 'sw' }), el('span', null, o.etiqueta))));
       });
 
+      const btnReset = filtrosActivos(e) ? el('button', { class: 'chip chip-btn', type: 'button', title: 'Volver a los filtros iniciales' }, '↺ Restablecer filtros') : null;
+      if (btnReset) btnReset.addEventListener('click', () => { e = Object.assign({}, ESTADO_INICIAL, { vista: e.vista, calor: e.calor, varModo: e.varModo, mezclaPct: e.mezclaPct }); cambio(); });
+      const avisoOpc = (vm.opcionesDistintas || []).map(o => el('span', { class: 'chip chip-warn', title: 'Cada temporada se calcula con la opción con que se procesó, igual que su HTML. Usa el interruptor para igualarlas.' },
+        '«' + o.etiqueta + '»: ' + vm.cur.season + ' = ' + (vm.opts[o.id] ? 'Sí' : 'No') + ', ' + vm.prev.season + ' = ' + (vm.optsPrev[o.id] ? 'Sí' : 'No')));
+      const forzadas = (dash.opciones || []).filter(o => o.id in vm.override).map(o => el('span', { class: 'chip chip-warn' }, '«' + o.etiqueta + '» forzado a ' + (vm.override[o.id] ? 'Sí' : 'No') + ' en ambas temporadas'));
       resumenFiltro.replaceChildren(...[
         el('span', { class: 'chip' }, vm.periodo),
         el('span', { class: 'chip' }, vm.comparando),
         vm.tiposSel ? el('span', { class: 'chip' }, vm.filtroTipos) : null,
+        ...avisoOpc, ...forzadas,
+        vm.fueraCur ? el('span', { class: 'chip chip-warn', title: 'Hay filas con fechas que caen en semanas mayores a ' + M.MAX_SEMANA + ' (probablemente un año mal capturado). No se grafican; aparecen en la «Tabla del reporte».' }, vm.fueraCur + ' semana(s) fuera de rango en ' + vm.cur.season) : null,
+        btnReset,
         vm.parcial ? el('span', { class: 'chip chip-warn', title: 'La última semana con datos todavía no termina' }, '* S' + vm.parcial.semana + ' parcial · datos al ' + u.fmtFecha(vm.parcial.corte)) : null].filter(Boolean));
     }
 
@@ -989,6 +1044,50 @@
       cMezcla.poner(vm.specs.mezcla);
       pintarCalor();
       pintarDetalle();
+      pintarTablaReporte();
+    }
+
+    // ---------- tabla idéntica a la del HTML del reporte (conciliación)
+    function pintarTablaReporte() {
+      const fn = RH.tablas && RH.tablas[dash.dataset];
+      if (!fn) { cRep.hidden = true; return; }
+      cRep.hidden = false;
+      const usarPrev = e.tablaTemp === 'prev' && vm.prev;
+      const snap = usarPrev ? vm.prev : vm.cur;
+      const incluir = !!vm.optsDe(snap).incluirCeros;
+      const t = fn(snap, incluir);
+      const opciones = [['cur', vm.cur.season]].concat(vm.prev ? [['prev', vm.prev.season]] : []);
+      const ctrl = segmentado(opciones, usarPrev ? 'prev' : 'cur', v => { e.tablaTemp = v; cambio(); }, 'Temporada de la tabla');
+      const btnCopiar = el('button', { class: 'btn sm primary', type: 'button' }, 'Copiar tabla (para pegar en Excel)');
+      btnCopiar.addEventListener('click', async () => {
+        const ok = await u.copiarTexto(t.tsv);
+        u.toast(ok ? 'Tabla copiada: es el mismo texto que copia el botón del reporte. Pégala en Excel con Ctrl+V.' : 'No se pudo copiar.', { tipo: ok ? 'ok' : 'error' });
+      });
+      const m = snap.meta || {};
+      const rep = RH.registro.reporte(dash.reporte);
+      const tabla = el('table', { class: 'tbl tbl-rep' });
+      const [enc, ...filas] = t.lineas;
+      tabla.appendChild(el('thead', null, el('tr', null, enc.map((h, i) => el('th', { class: i > 1 ? 'num' : '' }, h)))));
+      const tb = el('tbody');
+      filas.forEach((f, k) => {
+        const total = k === filas.length - 1;
+        tb.appendChild(el('tr', { class: total ? 'tot' : f[0] === 'N/A' ? 'na' : '' }, f.map((c, i) => el('td', { class: i > 1 ? 'num' : '' }, i > 1 ? u.fmtInt(c) : String(c)))));
+      });
+      tabla.appendChild(tb);
+      cRep.replaceChildren(
+        el('header', { class: 'card-h' },
+          el('div', { class: 'card-hl' },
+            el('h3', { class: 'card-t' }, 'Tabla del reporte · temporada ' + snap.season),
+            el('p', { class: 'card-s' }, 'Idéntica a la tabla del HTML «' + (rep ? rep.titulo : '') + '» para el mismo archivo: mismas columnas, fila N/A y TOTAL (todo el archivo, sin filtros de periodo ni de tipo).')),
+          el('div', { class: 'card-hr' }, ctrl, btnCopiar)),
+        el('p', { class: 'rep-meta' },
+          'Lunes de la semana 1: ', el('strong', null, u.fmtFecha(snap.week1)),
+          ' · «Incluir filas con todo en 0»: ', el('strong', null, incluir ? 'Sí' : 'No'),
+          m.archivo && m.archivo.nombre ? ' · Archivo: ' + m.archivo.nombre + (m.archivo.hoja ? ' (hoja ' + m.archivo.hoja + ')' : '') : '',
+          m.procesado ? ' · Procesado: ' + u.fmtFechaHora(m.procesado) : '',
+          snap.demo ? ' · DATOS DE DEMOSTRACIÓN' : ''),
+        el('p', { class: 'rep-concilia' }, t.concilia),
+        el('div', { class: 'table-wrap' }, tabla));
     }
 
     return {
