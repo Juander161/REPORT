@@ -138,6 +138,25 @@
         el('p', { class: 'muted small' }, 'Recepción en este equipo: ' + (recE && recE.estado === 'ok' ? 'datos del ' + u.fmtFechaHora(recE.version) + ' (' + (recE.temporadas || 0) + ' temporada(s)), revisado ' + u.fmtFechaHora(recE.revisado) : recE && recE.estado === 'ausente' ? 'no se encontró data/base-compartida.js junto a la app' : recE && recE.estado === 'vacio' ? 'todavía no hay datos publicados' : 'sin revisar') + '. ',
           btn('Buscar actualización ahora', async () => { const r = await RH.dbx.cargarArchivoCompartido(); u.toast(r.estado === 'ok' ? 'Actualizado: ' + (r.nuevos + r.actualizados) + ' temporada(s).' : r.estado === 'sin-cambios' ? 'Ya tienes lo último publicado.' : r.estado === 'vacio' ? 'Todavía no hay datos publicados.' : r.estado === 'ausente' ? 'No se encontró data/base-compartida.js.' : (r.error || 'Error'), { tipo: r.estado === 'error' ? 'error' : 'info' }); render(); })));
 
+      // ---------- historial de actualizaciones
+      const versiones = (await RH.store.versiones()).sort((a, b) => String(b.vid).localeCompare(String(a.vid)));
+      const cardH = versiones.length ? el('section', { class: 'card span-12 db-card' },
+        el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, 'Historial de actualizaciones'),
+          el('p', { class: 'card-s' }, 'Cada vez que reprocesas una temporada, la versión anterior se conserva aquí. En el dashboard puedes verla o compararla con la actual.'))),
+        (() => {
+          const t = el('table', { class: 'tbl tbl-db' });
+          t.appendChild(el('thead', null, el('tr', null, ['Dashboard', 'Temporada', 'Actualización', 'Procesado', 'Archivo', ''].map(h => el('th', null, h)))));
+          const tb = el('tbody');
+          RH.modelo.versionesComoSnaps(versiones).forEach(v => {
+            const d = reg.dashboardDeDataset(v.dataset);
+            tb.appendChild(el('tr', null, el('td', null, d ? d.titulo : v.dataset), el('td', null, String((v.meta && v.meta.temporadaBase) || v.season.split(' · ')[0])),
+              el('td', null, v.season.split(' · ').slice(1).join(' · ')), el('td', null, u.fmtFechaHora(v.meta && v.meta.procesado)), el('td', { class: 'ellipsis' }, (v.meta && v.meta.archivo && v.meta.archivo.nombre) || '–'),
+              el('td', null, btn('Borrar', async () => { if (await u.confirmar('Borrar esta actualización', 'Se elimina del historial (la temporada vigente no cambia).', { aceptar: 'Borrar' })) { await RH.store.borrarVersiones(v.id); render(); } }))));
+          });
+          t.appendChild(tb);
+          return el('div', { class: 'table-wrap' }, t);
+        })()) : null;
+
       // ---------- temporadas
       const tabla = el('table', { class: 'tbl tbl-db' });
       tabla.appendChild(el('thead', null, el('tr', null, ['Dashboard', 'Temporada', 'Lunes semana 1', 'Semanas', 'Tipos', 'Archivo de origen', 'Filas leídas', 'Procesado', 'Origen', ''].map((h, i) => el('th', { class: [3, 4, 6].includes(i) ? 'num' : '' }, h)))));
@@ -188,7 +207,7 @@
         el('p', { class: 'muted small' }, 'Si borras los datos de navegación se pierde la copia local; por eso conviene vincular o exportar el Excel.'),
         persist ? null : el('div', { class: 'card-actions' }, btn('Activar protección', async () => { const ok = await RH.store.persistente(); u.toast(ok ? 'Protección activada.' : 'El navegador no la concedió (se concede automáticamente al instalar la app).', { tipo: ok ? 'ok' : 'warn' }); render(); })));
 
-      raiz.replaceChildren(head, el('div', { class: 'grid' }, cardV, cardX, cardC, cardE, cardP, cardT, cardD, cardS));
+      raiz.replaceChildren(head, el("div", { class: "grid" }, ...[cardV, cardX, cardC, cardE, cardP, cardH, cardT, cardD, cardS].filter(Boolean)));
     }
 
     function reportar(r) {

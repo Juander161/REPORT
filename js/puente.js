@@ -118,7 +118,7 @@
           (previos.length > 1 ? ' para ' + previos.length + ' reportes' : '') +
           ' (procesada ' + u.fmtFechaHora(p0.meta && p0.meta.procesado) + ', ' + (p0.meta && p0.meta.archivo ? p0.meta.archivo.nombre : '') + ').' +
           (p0.week1 !== lista[0].week1 ? ' OJO: tenía otro lunes de semana 1 (' + u.fmtFecha(p0.week1) + ').' : '') +
-          ' ¿Reemplazar' + (previos.length > 1 ? 'los' : 'la') + ' con este archivo?';
+          ' La versión anterior se conserva en el historial de actualizaciones (podrás verla y compararla en el dashboard). ¿Reemplazar' + (previos.length > 1 ? 'los' : 'la') + ' con este archivo?';
         if (!(await u.confirmar('Reemplazar temporada', msg, { aceptar: 'Reemplazar' }))) return;
       }
       btn.disabled = true;

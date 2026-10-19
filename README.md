@@ -288,6 +288,27 @@ Límites: al abrir como carpeta (`file://`) no hay instalación ni modo sin cone
 http/https); en Chrome/Edge el permiso de escritura de la carpeta puede pedirse otra vez al reabrir el
 navegador («Publicar ahora»). La sincronización de OneDrive/Teams puede tardar en llegar a los demás.
 
+## Actualizaciones semanales y comparación entre ellas
+
+Cada semana se procesa el reporte nuevo con la **misma etiqueta de temporada** (por ejemplo 2027): la
+temporada se reemplaza y los dashboards muestran lo más reciente. La versión que se reemplaza se
+conserva en el **historial de actualizaciones** (Base de datos), fechada con el corte del archivo. En el
+dashboard, «Temporada actual» y «Comparar» incluyen esas actualizaciones («2027 · actual», «2027 · act.
+12 oct 2026»): se puede intercalar entre ellas y compararlas para ver qué cambió entre una semana y la
+siguiente (los datos de semanas pasadas cambian). El historial va en el Excel de la base
+(hojas `Versiones` y `DatosVersiones`) y se comparte con el resto del equipo. Borrar una temporada
+borra también su historial.
+
+## Operación en equipo con una carpeta compartida
+
+La carpeta completa de la app se coloca en un lugar compartido y todos abren **`index.html`** (doble
+clic, Chrome o Edge). Ver `LEEME-EQUIPO.txt` para las indicaciones al equipo. Quien actualiza (la
+persona responsable o, si falta, cualquiera del equipo) usa *Base de datos → Publicar para el equipo →
+Elegir carpeta de la app*; la app combina lo que ya cargó de la carpeta con lo nuevo, así que no se
+pierde nada aunque cambie quien publica. El panorama general se personaliza (⚙ Personalizar: tarjetas,
+orden y secciones, guardado en cada navegador) y la barra lateral se pliega y se puede contraer a
+íconos.
+
 ## Proyección de temporada
 
 La vista **Proyección de temporada** estima el cierre de la temporada actual con las

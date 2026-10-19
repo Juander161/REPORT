@@ -34,10 +34,10 @@
     return el('div', { class: 'spark', html: svg });
   }
 
-  function tarjetaDash(dash, snaps) {
-    // en dashboards con variantes (GOWNS) la tarjeta muestra el primer producto/medida (orden alfabético)
+  function tarjetaDash(dash, snaps, claveElegida) {
+    // en dashboards con variantes (GOWNS) la tarjeta muestra el producto/medida elegido (por defecto, el primero)
     const variantes = dash.variantes ? M.variantes(snaps, dash.dataset) : [];
-    const claveVar = variantes[0] ? variantes[0].clave : null;
+    const claveVar = claveElegida || (variantes[0] ? variantes[0].clave : null);
     if (dash.variantes) dash = M.dashPara(dash, claveVar);
     const temps = M.temporadas(snaps, dash.dataset, claveVar);
     const pendiente = dash.estado === 'pendiente';
@@ -133,10 +133,33 @@
     return card;
   }
 
+  // ---------------------------------------------------------------- selección guardada del panorama
+  const PREFS_KEY = 'rh-panorama';
+  const SECCIONES = [['semana', 'Semana de hoy'], ['actividad', 'Actividad reciente'], ['base', 'Estado de la base de datos']];
+
+  /** Tarjetas posibles: cada tablero y, en los que tienen variantes, cada producto y medida */
+  function elementosDisponibles(snaps) {
+    const out = [];
+    RH.registro.dashboards.forEach(d => {
+      const vars = d.variantes ? M.variantes(snaps, d.dataset) : [];
+      if (vars.length) vars.forEach(v => out.push({ clave: d.id + ':' + v.clave, dash: d, variante: v.clave, etiqueta: d.titulo + ' · ' + v.etiqueta }));
+      else out.push({ clave: d.id, dash: d, variante: null, etiqueta: d.titulo });
+    });
+    return out;
+  }
+  /** Por defecto: un tablero por tarjeta (el primer producto/medida en los de variantes) */
+  function seleccionPorDefecto(disp) {
+    const vistos = new Set();
+    return disp.filter(x => { if (vistos.has(x.dash.id)) return false; vistos.add(x.dash.id); return true; }).map(x => x.clave);
+  }
+  const leerPrefs = () => u.lsGet(PREFS_KEY, null);
+  const guardarPrefs = p => u.lsSet(PREFS_KEY, p);
+
   function montar(cont) {
     const raiz = el('div', { class: 'pano-view' });
     cont.replaceChildren(raiz);
     let snaps = [];
+    let panelAbierto = false;   // el panel «Personalizar» sigue abierto aunque la vista se vuelva a pintar
 
     async function render() {
       const reg = RH.registro;
@@ -145,9 +168,14 @@
       const recientes = snaps.slice().sort((a, b) => (b.week1 || '').localeCompare(a.week1 || ''));
       const ref = recientes[0];
       const week1 = ref ? ref.week1 : RH.demo.inicioTemporada(RH.demo.temporadaActual());
-      const temporada = ref ? ref.season : String(RH.demo.temporadaActual());
+      const temporada = ref ? String(ref.meta && ref.meta.temporada != null ? ref.meta.temporada : ref.season) : String(RH.demo.temporadaActual());
       const wHoy = u.weekOf(week1, u.hoyIso());
       const lunes = u.weekMonday(week1, wHoy);
+
+      const disp = elementosDisponibles(snaps);
+      const prefs = leerPrefs();
+      const seleccion = (prefs && Array.isArray(prefs.tarjetas) ? prefs.tarjetas : seleccionPorDefecto(disp)).map(c => disp.find(x => x.clave === c)).filter(Boolean);
+      const secciones = Object.assign({ semana: true, actividad: true, base: true }, (prefs && prefs.secciones) || {});
 
       const hoy = new Date();
       const saludo = hoy.getHours() < 12 ? 'Buenos días' : hoy.getHours() < 19 ? 'Buenas tardes' : 'Buenas noches';
@@ -155,17 +183,19 @@
         el('div', { class: 'ph-l' },
           el('div', { class: 'eyebrow' }, 'Panorama general'),
           el('h1', { class: 'ph-t' }, saludo),
-          el('p', { class: 'ph-sub' }, 'Resumen de los tres tableros con la información más reciente. Elige uno para analizar por rangos de semanas o una semana puntual.')),
-        el('div', { class: 'week-badge', title: 'Semana calculada con el lunes de la semana 1 de la temporada ' + temporada },
+          el('p', { class: 'ph-sub' }, 'Resumen de tus tableros con la información más reciente. Usa «Personalizar» para elegir qué ver; abre un tablero para analizar por rangos de semanas o una semana puntual.')),
+        el('div', { class: 'ph-r' }, el('button', { class: 'btn', type: 'button', id: 'btnPersonalizar', 'aria-expanded': 'false' }, '⚙ Personalizar')),
+        secciones.semana ? el('div', { class: 'week-badge', title: 'Semana calculada con el lunes de la semana 1 de la temporada ' + temporada },
           el('div', { class: 'wb-l' }, 'Hoy · temporada ' + temporada),
           el('div', { class: 'wb-v' }, wHoy >= 1 ? 'Semana ' + wHoy : 'Pretemporada'),
-          el('div', { class: 'wb-d' }, wHoy >= 1 ? u.fmtRango(lunes, u.addDays(lunes, 6)) : '')));
+          el('div', { class: 'wb-d' }, wHoy >= 1 ? u.fmtRango(lunes, u.addDays(lunes, 6)) : '')) : null);
 
       const demo = snaps.some(s => s.demo);
       const banner = demo ? el('div', { class: 'banner banner-demo' }, el('strong', null, 'DEMOSTRACIÓN · '),
         'Algunos tableros muestran datos ficticios. ', el('a', { href: '#/datos' }, 'Quitar demostración')) : null;
 
-      const grid = el('div', { class: 'pano-grid' }, reg.dashboards.map(d => tarjetaDash(d, snaps)));
+      const grid = seleccion.length ? el('div', { class: 'pano-grid' }, seleccion.map(x => tarjetaDash(x.dash, snaps, x.variante)))
+        : el('div', { class: 'empty' }, el('h3', null, 'No hay tarjetas seleccionadas'), el('p', null, 'Usa «Personalizar» para elegir qué quieres ver en el panorama.'));
 
       // actividad reciente
       const act = el('section', { class: 'card span-7' },
@@ -198,7 +228,44 @@
             comp && comp.estado === 'ok' ? '✓ ' + (comp.temporadas || []).length + ' temporada(s)' : comp && comp.estado === 'error' ? 'Con error' : 'No publicada'))),
         el('div', { class: 'card-actions' }, el('a', { class: 'btn sm', href: '#/datos' }, 'Administrar base de datos')));
 
-      raiz.replaceChildren(...[encabezado, banner, grid, el('div', { class: 'grid' }, act, base)].filter(Boolean));
+      // panel para elegir qué se ve (se guarda en este navegador)
+      const panel = el('section', { class: 'card pano-pers', hidden: !panelAbierto, id: 'panelPersonalizar' });
+      const pintarPanel = () => {
+        const p = leerPrefs() || {};
+        const actuales = Array.isArray(p.tarjetas) ? p.tarjetas.filter(c => disp.some(x => x.clave === c)) : seleccionPorDefecto(disp);
+        const orden = actuales.concat(disp.map(x => x.clave).filter(c => !actuales.includes(c)));
+        const secs = Object.assign({ semana: true, actividad: true, base: true }, p.secciones || {});
+        const guarda = (tarjetas, secc) => { guardarPrefs({ tarjetas, secciones: secc }); RH.util.toast('Selección guardada', { tipo: 'ok', ms: 1800 }); render().then(() => { const n = u.$('#panelPersonalizar'); if (n) { n.hidden = false; } }); };
+        const filas = orden.map((c, i) => {
+          const x = disp.find(d => d.clave === c);
+          const on = actuales.includes(c);
+          const cb = el('input', { type: 'checkbox', checked: on });
+          cb.addEventListener('change', () => guarda(cb.checked ? actuales.concat([c]) : actuales.filter(k => k !== c), secs));
+          const mover = (d) => { const l = actuales.slice(); const k = l.indexOf(c); const j = k + d; if (k < 0 || j < 0 || j >= l.length) return; [l[k], l[j]] = [l[j], l[k]]; guarda(l, secs); };
+          return el('li', { class: 'pers-i' + (on ? '' : ' off') }, el('label', null, cb, el('span', null, x.etiqueta)),
+            on ? el('span', { class: 'pers-mv' },
+              el('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'Subir', disabled: actuales.indexOf(c) === 0, onclick: () => mover(-1) }, '↑'),
+              el('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'Bajar', disabled: actuales.indexOf(c) === actuales.length - 1, onclick: () => mover(1) }, '↓')) : null);
+        });
+        panel.replaceChildren(
+          el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, 'Personalizar el panorama'), el('p', { class: 'card-s' }, 'Elige qué tarjetas aparecen y en qué orden. Se guarda en este navegador y se conserva al volver a abrir la app.'))),
+          el('div', { class: 'pers-grid' },
+            el('div', null, el('h4', { class: 'pers-h' }, 'Tarjetas'), el('ul', { class: 'pers-list' }, ...filas)),
+            el('div', null, el('h4', { class: 'pers-h' }, 'Secciones'), el('ul', { class: 'pers-list' }, ...SECCIONES.map(([k, t]) => {
+              const cb = el('input', { type: 'checkbox', checked: secs[k] !== false });
+              cb.addEventListener('change', () => guarda(actuales, Object.assign({}, secs, { [k]: cb.checked })));
+              return el('li', { class: 'pers-i' }, el('label', null, cb, el('span', null, t)));
+            })))),
+          el('div', { class: 'card-actions' },
+            el('button', { class: 'btn sm', type: 'button', onclick: () => { try { localStorage.removeItem(PREFS_KEY); } catch (e) { /* sin almacenamiento */ } RH.util.toast('Se restableció la selección', { tipo: 'info', ms: 1800 }); render().then(() => { const n = u.$('#panelPersonalizar'); if (n) n.hidden = false; }); } }, 'Restablecer'),
+            el('button', { class: 'btn sm ghost', type: 'button', onclick: () => { panelAbierto = false; panel.hidden = true; const b = u.$('#btnPersonalizar'); if (b) b.setAttribute('aria-expanded', 'false'); } }, 'Cerrar')));
+      };
+      pintarPanel();
+      const bp = encabezado.querySelector('#btnPersonalizar');
+      bp.setAttribute('aria-expanded', String(panelAbierto));
+      bp.addEventListener('click', () => { panel.hidden = !panel.hidden; panelAbierto = !panel.hidden; bp.setAttribute('aria-expanded', String(panelAbierto)); });
+      const inferior = [secciones.actividad ? act : null, secciones.base ? base : null].filter(Boolean);
+      raiz.replaceChildren(...[encabezado, panel, banner, grid, inferior.length ? el('div', { class: 'grid' }, ...inferior.map(n => { n.classList.remove('span-7', 'span-5'); n.classList.add(inferior.length === 2 ? (n === act ? 'span-7' : 'span-5') : 'span-12'); return n; })) : null].filter(Boolean));
     }
 
     return { actualizar(lista) { snaps = lista; render(); }, retematizar() {} };

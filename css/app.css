@@ -512,3 +512,50 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
 @media print { .info-btn, .info-pop { display: none !important; } }
 
 .inp-url { width: 100%; max-width: 720px; padding: 9px 12px; border: 1px solid var(--border-2); border-radius: 9px; background: var(--surface); color: var(--text-1); font: inherit; margin-top: 4px; }
+
+
+/* ------------------------------------------------------------ barra lateral: secciones, estado y modo compacto */
+.nav-sec-b { width: 100%; display: flex; align-items: center; justify-content: space-between; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit; }
+.nav-sec-b:hover { color: #fff; }
+.nav-sec-b .chev { font-style: normal; font-size: 11px; transition: transform .15s; }
+.nav-sec-b[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.nav-grp[hidden] { display: none; }
+.nav-i .t { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.nav-i .t-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-sub { font-size: 10.5px; color: var(--side-text-2); font-weight: 400; margin-top: 1px; }
+.nav-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #5d6b82; }
+.nav-dot.ok { background: #3cc46e; }
+.nav-dot.demo { background: #f2bd55; }
+.side-toggle { position: absolute; top: 24px; right: 10px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: var(--side-text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.side-toggle:hover { background: rgba(255,255,255,.16); color: #fff; }
+.side-toggle svg { transition: transform .2s; }
+.side-toggle[aria-pressed="true"] svg { transform: rotate(180deg); }
+.sidebar { position: sticky; }
+@media (min-width: 901px) {
+  .app { transition: grid-template-columns .2s ease; }
+  .app.side-compact { grid-template-columns: 72px minmax(0, 1fr); }
+  .app.side-compact .sidebar { padding: 18px 8px 14px; align-items: stretch; }
+  .app.side-compact .side-toggle { right: 23px; top: 70px; }
+  .app.side-compact .brand { justify-content: center; padding: 4px 0 40px; }
+  .app.side-compact .brand-t, .app.side-compact .nav-i .t, .app.side-compact .nav-badge, .app.side-compact .nav-sec-b span, .app.side-compact .side-ver, .app.side-compact .theme-sw, .app.side-compact .btn-install { display: none; }
+  .app.side-compact .nav-sec-b { justify-content: center; padding: 10px 0 4px; }
+  .app.side-compact .nav-sec-b::after { content: ""; display: block; width: 24px; height: 1px; background: rgba(255,255,255,.2); }
+  .app.side-compact .nav-sec-b .chev { display: none; }
+  .app.side-compact .nav-i { justify-content: center; padding: 10px 0; }
+  .app.side-compact .nav-i .nav-dot { position: absolute; top: 6px; right: 12px; width: 7px; height: 7px; }
+  .app.side-compact .nav-i .nav-sync { position: absolute; top: 6px; right: 12px; }
+  .app.side-compact .nav-i.on::before { left: -8px; }
+}
+@media (max-width: 900px) { .side-toggle { display: none; } }
+
+/* ------------------------------------------------------------ personalizar el panorama */
+.pano-pers { margin-bottom: 18px; }
+.pers-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 20px; }
+.pers-h { margin: 0 0 6px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
+.pers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pers-i { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border-radius: 8px; }
+.pers-i:hover { background: var(--surface-3); }
+.pers-i.off { color: var(--text-3); }
+.pers-i label { display: flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13.5px; }
+.pers-mv { display: inline-flex; gap: 4px; }
+@media (max-width: 720px) { .pers-grid { grid-template-columns: 1fr; } }

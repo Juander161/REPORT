@@ -1,0 +1,30 @@
+REPORT HUB · INDICACIONES PARA EL EQUIPO
+=======================================
+
+PARA VER LOS TABLEROS (todas las personas)
+  1. Abre la carpeta compartida de Report Hub.
+  2. Haz doble clic en  index.html  (se abre en Chrome o Edge).
+  3. Listo: al abrirse carga solo los datos más recientes y los revisa cada minuto
+     mientras la tengas abierta. No hay que descargar ni enviar nada.
+  Consejo: crea un acceso directo a index.html en tu escritorio.
+  No abras otros archivos de la carpeta (reportes/, js/, css/ ...): son parte de la aplicación.
+
+PARA ACTUALIZAR LOS DATOS (la persona responsable; si no está, cualquiera del equipo)
+  1. En el menú lateral entra a Reportes y elige el reporte (por ejemplo "Tassels Only por semana"
+     o "Gowns activas (2 archivos)").
+  2. Carga el archivo de la semana, revisa el lunes de la semana 1 y la temporada (siempre la misma
+     etiqueta, por ejemplo 2027) y pulsa Procesar y luego "Guardar en el dashboard".
+     La temporada se reemplaza y la versión anterior queda en el historial de actualizaciones.
+  3. La primera vez, entra a  Base de datos > Publicar para el equipo > Elegir carpeta de la app  y
+     selecciona la carpeta compartida de Report Hub. Después, cada vez que guardes, la app publica sola
+     (si el navegador pide confirmar el permiso, pulsa "Publicar ahora").
+  4. Para comparar con una actualización anterior: en el dashboard, elige en "Comparar" la
+     actualización (por ejemplo "2027 · act. 12 oct 2026").
+
+SI HAY UN PROBLEMA
+  - No aparecen datos nuevos: Base de datos > "Buscar actualización ahora".
+  - Los datos publicados tardan si la carpeta se sincroniza con OneDrive/Teams: es normal.
+  - Para que no se pierda nada, no borres ni muevas la carpeta data/.
+
+PRIVACIDAD
+  La aplicación no se conecta a internet ni a ningún servicio: todo se procesa en tu computadora.

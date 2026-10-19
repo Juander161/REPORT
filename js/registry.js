@@ -15,7 +15,7 @@
   const conCeros = (c, o) => (c.to || 0) + (o.incluirCeros ? (c.ceros || 0) : 0);
 
   RH.registro = {
-    app: { nombre: 'Report Hub', version: '1.8.0' },
+    app: { nombre: 'Report Hub', version: '1.9.0' },
 
     dashboards: [
       {

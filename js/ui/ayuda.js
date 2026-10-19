@@ -112,6 +112,16 @@
       <p>En Reportes hay una versión «(2 archivos)» de cada uno. Cargas A1 y A2, eliges las columnas de cada archivo (número de orden, fecha, tipo y, en Homeship, el filtro; y la columna de cada QTY), y la app cuenta cada orden <strong>una sola vez</strong> y aplica la misma lógica del reporte de un archivo. Guarda en el mismo dashboard y trae el panel de auditoría para comparar con tu revisión manual.</p>
     </section>
 
+    <section class="card span-6 guide" id="historial">
+      <h3 class="card-t">Actualizaciones semanales y comparación</h3>
+      <ol>
+        <li>Cada semana procesa el reporte nuevo con la <strong>misma etiqueta de temporada</strong>: la temporada se <strong>reemplaza</strong> y el dashboard muestra siempre lo más reciente.</li>
+        <li>La versión anterior <strong>no se pierde</strong>: queda en el <strong>historial de actualizaciones</strong> (Base de datos), con la fecha de esa actualización.</li>
+        <li>En el dashboard, «Temporada actual» y «Comparar» incluyen esas actualizaciones («2027 · actual», «2027 · act. 12 oct 2026»…): puedes <strong>intercalar</strong> entre ellas o <strong>compararlas</strong> para ver qué cambió de una semana a otra.</li>
+        <li>El historial viaja con la base compartida, así que todo el equipo lo ve.</li>
+      </ol>
+    </section>
+
     <section class="card span-6 guide" id="distribuir">
       <h3 class="card-t">Compartir los datos con todo el equipo (solo archivos)</h3>
       <ol>
