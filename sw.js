@@ -1,7 +1,7 @@
 /* Report Hub · service worker (funcionamiento sin conexión).
    IMPORTANTE: al publicar cambios, sube el número de VERSION para que cada
    persona reciba el aviso «Nueva versión disponible». */
-const VERSION = 'report-hub-v1.6.0';
+const VERSION = 'report-hub-v1.7.0';
 const DATOS = 'report-hub-datos';
 
 const ARCHIVOS = [

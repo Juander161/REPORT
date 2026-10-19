@@ -44,6 +44,7 @@
     <div class="form-grid">
       <label class="fld">Grupos de tipo <input id="grupos" value="GREG, COLL"><span class="hint">Los tipos de los archivos se agrupan en estos nombres. Lo que quede en «Ignorar» no se cuenta.</span></label>
     </div>
+    <label class="check"><input type="checkbox" id="otros"> Contar también los tipos sin grupo (los que dejes en «Ignorar») como <strong>OTROS</strong>, para poder compararlo contra el total de todas las órdenes</label>
     <div class="actions"><button id="detectar" class="btn" type="button">Detectar tipos de los archivos</button><span class="muted" id="detectarInfo"></span></div>
     <div class="table-wrap tipos-wrap" id="tiposTabla" hidden></div>
   </section>
@@ -75,6 +76,20 @@
 
   <section class="card save" id="panelGuardar" hidden></section>
 
+  <section class="card" id="auditoriaCard" hidden>
+    <h2 class="step-h"><span class="step-n">✓</span> Auditoría contra tu revisión manual</h2>
+    <p class="muted">Sirve para comparar con tu proceso (<code>=UNIQUE(VSTACK(…))</code> + <code>XLOOKUP</code>): los conteos equivalen a los de tu hoja y el detalle trae una fila por orden única, igual que tu hoja después de traer fecha, tipo y cantidades.</p>
+    <div class="table-wrap"><table class="tbl-cfg" id="audConteos"></table></div>
+    <h3 class="arch-t" style="margin-top:14px">Cantidades por producto (todas las órdenes únicas, sin filtrar por tipo, y con los tipos agrupados)</h3>
+    <div class="table-wrap"><table class="tbl-cfg" id="audProd"></table></div>
+    <div class="actions"><button id="descDetalle" class="btn" type="button">Descargar detalle de órdenes únicas (CSV para Excel)</button></div>
+    <h3 class="arch-t" style="margin-top:14px">Comparar con tu lista de órdenes únicas</h3>
+    <p class="muted">Pega aquí la columna de números de orden de tu hoja (el resultado de <code>UNIQUE</code>), una por línea.</p>
+    <textarea id="idsManual" rows="4" style="width:100%;max-width:520px" placeholder="100001&#10;100002&#10;…"></textarea>
+    <div class="actions"><button id="compararIds" class="btn" type="button">Comparar</button></div>
+    <div id="audComparacion" class="concilia"></div>
+  </section>
+
   <section class="card" id="resultados" hidden>
     <div class="actions"><label class="fld" style="margin:0">Ver <select id="ver"></select></label></div>
     <p class="concilia" id="concilia"></p>
@@ -103,6 +118,7 @@ let tiposVistos = new Map();      // tipo -> {1: n, 2: n}
 let mapeoClave = '';              // con qué archivos y columnas se detectaron los tipos
 let resultados = new Map();
 let ultimo = null, procesando = false, cambioDurante = false, tsv = '';
+let auditoria = null;             // datos del último proceso para auditar contra tu revisión manual
 
 const limpio = col => col.replace(/\s+QTY$/i, '').trim().replace(/\s+/g, '_');
 const norm = s => String(s).toUpperCase().replace(/\s+QTY$/, '').replace(/[^A-Z0-9]/g, '');
@@ -305,6 +321,7 @@ async function procesarArchivos() {
   $('resultados').hidden = true; $('copiar').disabled = true; guardarUI.ocultar();
 
   const orden = $('pref').value === '2' ? [2, 1] : [1, 2];
+  const contarOtros = $('otros').checked;
   const vistos = new Map();            // número de orden -> true (órdenes únicas)
   const unicas = [];                   // registros compactos, uno por orden única
   const est = { filas: { 1: 0, 2: 0 }, dupDentro: { 1: 0, 2: 0 }, dupEntre: 0, sinId: 0, unicasDe: { 1: 0, 2: 0 } };
@@ -326,16 +343,15 @@ async function procesarArchivos() {
         alFila(row) {
           est.filas[n]++;
           const id = normId(row[ix.id]);
-          if (id === '') est.sinId++;
-          else {
-            idsDe[n].add(id);
-            if (vistos.has(id)) { if (vistos.get(id) === n) est.dupDentro[n]++; else est.dupEntre++; return; }
-            vistos.set(id, n);
-          }
+          // sin número de orden no hay forma de identificarla (en Excel, UNIQUE + XLOOKUP tampoco la encuentran): se excluye
+          if (id === '') { est.sinId++; return; }
+          idsDe[n].add(id);
+          if (vistos.has(id)) { if (vistos.get(id) === n) est.dupDentro[n]++; else est.dupEntre++; return; }
+          vistos.set(id, n);
           est.unicasDe[n]++;
           const { semana, motivo } = RH.csv.semana(row[ix.fecha], inicio, a.fmt);
-          const grupo = mapeo.get(tipoClave(row[ix.tipo])) || '';
-          unicas.push({ semana, motivo, grupo, vals: ix.prod.map(i => i < 0 ? 0 : RH.csv.num(row[i])) });
+          const grupo = mapeo.get(tipoClave(row[ix.tipo])) || (contarOtros ? 'OTROS' : '');
+          unicas.push({ id, n, fechaTxt: row[ix.fecha], semana, motivo, tipoTxt: row[ix.tipo], grupo, vals: ix.prod.map(i => i < 0 ? 0 : RH.csv.num(row[i])) });
         },
         alProgreso(leidos, total) {
           $('estado').textContent = 'Leyendo ' + NOMBRE_ARCH[n] + '… ' + Math.round(total ? leidos / total * 100 : 100) + ' %';
@@ -372,7 +388,7 @@ async function procesarArchivos() {
   const enAmbos = est.dupEntre;
   const cfgArchivos = archivos.map(a => ({ archivo: RH.puente.metaArchivo(a.file, a.hoja), colId: a.id, colFecha: a.fecha, colTipo: a.tipo, fmt: a.fmt }));
   const mapeoObj = {}; mapeo.forEach((g, v) => { if (g) mapeoObj[v] = g; });
-  const meta0 = { reporte: DATASET, archivos: cfgArchivos, unicas: unicas.length, duplicadasEntreArchivos: enAmbos, duplicadasDentro: est.dupDentro, sinNumero: est.sinId, filas: incluidas, fechasMalas: malas, antesDeInicio: antes, grupos: [...gruposUsados].sort(), tiposAgrupados: mapeoObj, prioridad: NOMBRE_ARCH[orden[0]] };
+  const meta0 = { reporte: DATASET, archivos: cfgArchivos, unicas: unicas.length, duplicadasEntreArchivos: enAmbos, duplicadasDentro: est.dupDentro, sinNumero: est.sinId, filas: incluidas, fechasMalas: malas, antesDeInicio: antes, grupos: [...gruposUsados].sort(), tiposAgrupados: mapeoObj, otrosComoGrupo: contarOtros, prioridad: NOMBRE_ARCH[orden[0]] };
   acc.forEach((mapa, clave) => {
     const [p, m] = clave.split('|');
     resultados.set(clave, Object.assign(RH.puente.desdeMapa(mapa, ['v']), {
@@ -381,6 +397,8 @@ async function procesarArchivos() {
     }));
   });
   const resultado = { inicioIso, filas: unicas.length, incluidas, productos: prods.map(p => p.nombre), modos };
+  auditoria = { prods, unicas, vistos, idsDe, est, archivos, orden };
+  pintarAuditoria();
   $('estado').textContent = 'Listo. Filas: A1 ' + est.filas[1].toLocaleString() + ' · A2 ' + est.filas[2].toLocaleString() +
     ' | Órdenes únicas: ' + unicas.length.toLocaleString() + ' (repetidas entre archivos: ' + enAmbos.toLocaleString() +
     (est.dupDentro[1] + est.dupDentro[2] ? ', repetidas dentro de un mismo archivo: ' + (est.dupDentro[1] + est.dupDentro[2]).toLocaleString() : '') + ')' +
@@ -395,7 +413,9 @@ async function procesarArchivos() {
   const semanasNum = [...new Set([...acc.values()].flatMap(m => [...m.keys()]))].filter(k => k !== 'N/A');
   const avisos = RH.puente.avisosResultado({ base: incluidas, antesDeInicio: antes, fechasMalas: malas, maxSemana: Math.max(0, ...semanasNum), maxEnRango: RH.puente.ultimaSemana(semanasNum) });
   if (avisoExcel) avisos.unshift(avisoExcel);
-  if (est.sinId) avisos.push(est.sinId.toLocaleString() + ' fila(s) sin número de orden: no se pueden comparar y cuentan como órdenes distintas.');
+  if (est.sinId) avisos.push(est.sinId.toLocaleString() + ' fila(s) sin número de orden quedaron fuera (no se pueden identificar). Revisa que la columna del número de orden sea la correcta.');
+  // un producto sin columna en un archivo aporta 0 desde ese archivo
+  prods.forEach(p => { [1, 2].forEach(n => { if (!(n === 1 ? p.c1 : p.c2) && est.unicasDe[n]) avisos.push('«' + p.nombre + '» no tiene columna en ' + NOMBRE_ARCH[n] + ': las ' + est.unicasDe[n].toLocaleString() + ' órdenes que vienen de ' + NOMBRE_ARCH[n] + ' suman 0 en ese producto.'); }); });
   if (!enAmbos) avisos.push('Ninguna orden aparece en los dos archivos: revisa que las columnas del número de orden sean las correctas.');
   $('aviso').hidden = !avisos.length;
   $('aviso').textContent = avisos.length ? '⚠ ' + avisos.join(' ') : '';
@@ -447,6 +467,49 @@ const guardarUI = RH.puente.panelGuardar({
     return avisos.length ? avisos.join(' ') : null;
   }
 });
+
+// ---------- auditoría
+function pintarAuditoria() {
+  const A = auditoria; if (!A) return;
+  const f = n => n.toLocaleString();
+  const { est, vistos, idsDe, prods, unicas } = A;
+  const ambos = [...idsDe[1]].filter(i => idsDe[2].has(i)).length;
+  const filas = [
+    ['Filas leídas en A1 / A2', f(est.filas[1]) + ' / ' + f(est.filas[2])],
+    ['Números de orden distintos en A1 / A2', f(idsDe[1].size) + ' / ' + f(idsDe[2].size)],
+    ['Órdenes que están en los dos archivos', f(ambos)],
+    ['Órdenes únicas (= cantidad de filas de UNIQUE(VSTACK(A1; A2)))', f(vistos.size)],
+    ['Repetidas dentro del mismo archivo (A1 / A2)', f(est.dupDentro[1]) + ' / ' + f(est.dupDentro[2])],
+    ['Filas sin número de orden (excluidas)', f(est.sinId)],
+    ['Órdenes únicas tomadas de A1 / de A2', f(est.unicasDe[1]) + ' / ' + f(est.unicasDe[2])]
+  ];
+  $('audConteos').innerHTML = filas.map(r => '<tr><td>' + esc(r[0]) + '</td><td class="num"><strong>' + esc(r[1]) + '</strong></td></tr>').join('');
+  const suma = (fn) => prods.map((p, k) => unicas.reduce((a, r) => a + fn(r, k), 0));
+  const todasS = suma((r, k) => r.vals[k]), todasC = suma((r, k) => r.vals[k] > 0 ? 1 : 0);
+  const grupS = suma((r, k) => r.grupo ? r.vals[k] : 0), grupC = suma((r, k) => r.grupo && r.vals[k] > 0 ? 1 : 0);
+  const delA1 = suma((r, k) => r.n === 1 ? r.vals[k] : 0), delA2 = suma((r, k) => r.n === 2 ? r.vals[k] : 0);
+  $('audProd').innerHTML = '<tr><th>Producto</th><th>Suma · todas</th><th>Órdenes con cantidad &gt; 0 · todas</th><th>Suma · tipos agrupados</th><th>Órdenes · tipos agrupados</th><th>Suma de las que vienen de A1</th><th>Suma de las que vienen de A2</th></tr>' +
+    prods.map((p, k) => '<tr><td>' + esc(p.nombre) + '</td>' + [todasS[k], todasC[k], grupS[k], grupC[k], delA1[k], delA2[k]].map(v => '<td class="num">' + f(v) + '</td>').join('') + '</tr>').join('');
+  $('auditoriaCard').hidden = false;
+}
+function csvCelda(v) { const t = String(v == null ? '' : v); return /[",\n;]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }
+$('descDetalle').onclick = () => {
+  const A = auditoria; if (!A) return;
+  const cab = ['Número de orden', 'Archivo de origen', 'Fecha', 'Semana', 'Tipo (original)', 'Grupo', ...A.prods.map(p => p.nombre)];
+  const lineas = [cab, ...A.unicas.map(r => [r.id, NOMBRE_ARCH[r.n], r.fechaTxt, r.semana === 'N/A' ? 'N/A' : r.semana, r.tipoTxt, r.grupo || '(ignorado)', ...r.vals])];
+  const blob = new Blob(['\uFEFF' + lineas.map(l => l.map(csvCelda).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  RH.util.descargar(blob, 'ordenes_unicas_' + (etiquetaTemporada() || 'detalle') + '.csv');
+};
+$('compararIds').onclick = () => {
+  const A = auditoria; if (!A) { $('audComparacion').textContent = 'Primero procesa los archivos.'; return; }
+  const manual = new Set($('idsManual').value.split(/\r?\n/).map(normId).filter(Boolean));
+  const mias = new Set(A.vistos.keys());
+  const faltan = [...manual].filter(i => !mias.has(i)), sobran = [...mias].filter(i => !manual.has(i));
+  const lista = a => a.length ? a.slice(0, 40).join(', ') + (a.length > 40 ? ' … (+' + (a.length - 40) + ')' : '') : 'ninguna';
+  $('audComparacion').innerHTML = 'En tu lista: <strong>' + manual.size.toLocaleString() + '</strong> · en la app: <strong>' + mias.size.toLocaleString() + '</strong>.<br>' +
+    'En tu lista y <strong>no</strong> en la app (' + faltan.length.toLocaleString() + '): ' + esc(lista(faltan)) + '<br>' +
+    'En la app y <strong>no</strong> en tu lista (' + sobran.length.toLocaleString() + '): ' + esc(lista(sobran));
+};
 
 armarArchivos();
 $('go').onclick = procesar;
