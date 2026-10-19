@@ -17,6 +17,10 @@
   };
   // Los filtros duran solo mientras la app está abierta (sessionStorage): al abrirla de nuevo
   // todo arranca igual que los reportes, sin filtros "escondidos" de otra sesión.
+  // etiquetas de semana: la semana 0 es el bloque N/A (todo lo anterior a la semana 1, sumado)
+  const etS = w => w === 0 ? 'N/A' : 'S' + w;
+  const etSem = w => w === 0 ? 'N/A (previo a la semana 1)' : 'Semana ' + w;
+
   function estadoDe(id) {
     try { localStorage.removeItem('rh-dash-' + id); } catch (e) { /* versiones anteriores lo guardaban aquí */ }
     let guardado = {};
@@ -24,7 +28,7 @@
     return Object.assign({}, ESTADO_INICIAL, guardado);
   }
   function filtrosActivos(e) {
-    return e.cur || e.prev || (e.preset && e.preset !== 'fecha') || e.modo === 'semana' || (e.tiposExcluidos && e.tiposExcluidos.length) ||
+    return e.cur || e.prev || (e.preset && e.preset !== 'fecha') || e.modo === 'semana' || e.incluirNA === false || (e.tiposExcluidos && e.tiposExcluidos.length) ||
       Object.keys(e.opciones || {}).length;
   }
 
@@ -91,7 +95,9 @@
     }
     const semana = (e.semana >= 1 && e.semana <= maxW) ? +e.semana : Math.max(1, completa >= 1 ? completa : ultCur);
     const modo = e.modo === 'semana' ? 'semana' : 'rango';
-    const selec = modo === 'semana' ? [semana] : u.rango(desde, hasta);
+    // lo previo a la semana 1 (fila N/A) se suma como la «semana 0» cuando el periodo arranca en la semana 1
+    const conNA = modo === 'rango' && desde === 1 && e.incluirNA !== false && (M.tieneNA(cur) || M.tieneNA(prev));
+    const selec = modo === 'semana' ? [semana] : (conNA ? [0] : []).concat(u.rango(desde, hasta));
     const contexto = modo === 'semana' ? u.rango(1, maxW) : selec;
     const resaltar = modo === 'semana' ? semana - 1 : null;
     const semK = selec.filter(w => w <= ultCur && (!prev || w <= ultPrev));
@@ -99,15 +105,15 @@
 
     // etiquetas
     const esParcial = w => !!parcial && w === parcial.semana;
-    const lunes = (s, w) => s && s.week1 ? u.weekMonday(s.week1, w) : null;
-    const categorias = contexto.map(w => 'S' + w + (esParcial(w) ? '*' : ''));
-    const categoriasLargas = contexto.map(w => 'Semana ' + w + (esParcial(w) ? ' (parcial)' : ''));
-    const notas = contexto.map(w => [cur, prev].filter(Boolean).map(s => s.season + ': ' + u.fmtRango(lunes(s, w), u.addDays(lunes(s, w), 6))).join(' · '));
+    const lunes = (s, w) => s && s.week1 && w >= 1 ? u.weekMonday(s.week1, w) : null;
+    const categorias = contexto.map(w => etS(w) + (esParcial(w) ? '*' : ''));
+    const categoriasLargas = contexto.map(w => etSem(w) + (esParcial(w) ? ' (parcial)' : ''));
+    const notas = contexto.map(w => [cur, prev].filter(Boolean).map(s => s.season + ': ' + (w === 0 ? 'antes del ' + u.fmtFecha(s.week1) + ' o sin fecha' : u.fmtRango(lunes(s, w), u.addDays(lunes(s, w), 6)))).join(' · '));
     const nombreCur = 'Temporada ' + cur.season;
     const nombrePrev = prev ? 'Temporada ' + prev.season : null;
     const periodo = modo === 'semana'
       ? 'Semana ' + semana + ' · ' + u.fmtRango(lunes(cur, semana), u.addDays(lunes(cur, semana), 6))
-      : 'Semanas ' + desde + (hasta !== desde ? '–' + hasta : '') + ' · ' + u.fmtRango(lunes(cur, desde), u.addDays(lunes(cur, hasta), 6));
+      : 'Semanas ' + desde + (hasta !== desde ? '–' + hasta : '') + (conNA ? ' + N/A' : '') + ' · ' + u.fmtRango(lunes(cur, desde), u.addDays(lunes(cur, hasta), 6));
     const comparando = prev ? cur.season + ' vs ' + prev.season : cur.season;
     const filtroTipos = tiposSel ? (tiposSel.size === 1 ? [...tiposSel][0] : tiposSel.size + ' tipos') : 'Todos los tipos';
 
@@ -246,7 +252,7 @@
     vm.fueraPrev = prev ? M.semanasFuera(prev).length : 0;
     vm.fueraCurV = fueraDe(cur, opts);
     vm.fueraPrevV = prev ? fueraDe(prev, optsPrev) : 0;
-    vm.variantes = variantes; vm.clave = clave;
+    vm.variantes = variantes; vm.clave = clave; vm.conNA = conNA;
     vm.kpis = kpis(vm);
     vm.hallazgos = hallazgos(vm);
     vm.detalle = detalle(vm);
@@ -262,7 +268,9 @@
 
   function rangoTxt(ws) {
     if (!ws.length) return '–';
-    return ws[0] === ws[ws.length - 1] ? String(ws[0]) : ws[0] + '–' + ws[ws.length - 1];
+    const conNA = ws[0] === 0, r = conNA ? ws.slice(1) : ws;
+    const t = !r.length ? '' : (r[0] === r[r.length - 1] ? String(r[0]) : r[0] + '–' + r[r.length - 1]);
+    return conNA ? 'N/A' + (t ? ' + ' + t : '') : t;
   }
 
   function delta(a, b, fmt) {
@@ -290,7 +298,8 @@
         delta: prev ? delta(vc, vp, fmtM) : null,
         nota: (prev ? 'vs ' + prev.season + ' en las mismas ' + vm.semK.length + ' semana' + (vm.semK.length === 1 ? '' : 's') + ' (' + rangoTxt(vm.semK) + ')' : vm.periodo) +
           (vm.parcial && vm.selec.includes(vm.parcial.semana) ? ' · incluye S' + vm.parcial.semana + ' en curso' : '') +
-          (vm.naCur || vm.fueraCurV ? ' · sin contar ' + [vm.naCur ? 'la fila N/A (' + G.fmtValor(vm.naCur, fmtM) + ')' : '', vm.fueraCurV ? 'semanas fuera de rango (' + G.fmtValor(vm.fueraCurV, fmtM) + ')' : ''].filter(Boolean).join(' ni ') + '; ver «Tabla del reporte»' : '')
+          (vm.conNA && vm.naCur ? ' · incluye N/A, lo previo a la semana 1 (' + G.fmtValor(vm.naCur, fmtM) + ')' : '') +
+          (!vm.conNA && vm.naCur || vm.fueraCurV ? ' · sin contar ' + [!vm.conNA && vm.naCur ? 'la fila N/A (' + G.fmtValor(vm.naCur, fmtM) + ')' : '', vm.fueraCurV ? 'semanas fuera de rango (' + G.fmtValor(vm.fueraCurV, fmtM) + ')' : ''].filter(Boolean).join(' ni ') + '; ver «Tabla del reporte»' : '')
       });
       if (prev) {
         const comp = vm.totPrevCompleta && vm.totPrevCompleta.v;
@@ -306,13 +315,15 @@
 
       const semCur = (prev ? vm.semK : vm.selec.filter(w => w <= vm.ultCur));
       if (metrica.tipo !== 'ratio' && semCur.length) {
-        const avgC = vc / semCur.length, avgP = prev && vp != null ? vp / semCur.length : null;
-        out.push({ etiqueta: 'Promedio semanal', valor: avgC, formato: 'int', delta: prev ? delta(avgC, avgP, 'int') : null, nota: prev ? prev.season + ': ' + u.fmtInt(avgP) + ' por semana' : semCur.length + ' semanas' });
+        const nSem = semCur.filter(w => w >= 1).length || 1;
+        const na0c = vm.contexto[0] === 0 ? (vm.vCur[0] || 0) : 0, na0p = vm.contexto[0] === 0 && vm.vPrev ? (vm.vPrev[0] || 0) : 0;
+        const avgC = (vc - na0c) / nSem, avgP = prev && vp != null ? (vp - na0p) / nSem : null;
+        out.push({ etiqueta: 'Promedio semanal', valor: avgC, formato: 'int', delta: prev ? delta(avgC, avgP, 'int') : null, nota: (prev ? prev.season + ': ' + u.fmtInt(avgP) + ' por semana' : nSem + ' semanas') + (na0c || na0p ? ' · sin contar N/A' : '') });
       }
 
       // semana más alta de la temporada actual dentro del periodo
       let mejor = null;
-      vm.contexto.forEach((w, i) => { if (w <= vm.ultCur && vm.vCur[i] != null && (!mejor || vm.vCur[i] > mejor.v)) mejor = { w, v: vm.vCur[i] }; });
+      vm.contexto.forEach((w, i) => { if (w >= 1 && w <= vm.ultCur && vm.vCur[i] != null && (!mejor || vm.vCur[i] > mejor.v)) mejor = { w, v: vm.vCur[i] }; });
       if (mejor) out.push({ etiqueta: 'Semana más alta · ' + cur.season, valorTexto: 'S' + mejor.w, nota: G.fmtValor(mejor.v, fmtM) + ' · ' + u.fmtFecha(u.weekMonday(cur.week1, mejor.w)) });
 
       if (mPart) {
@@ -381,14 +392,14 @@
       }
       if (prev) {
         let arriba = 0, total = 0;
-        vm.contexto.forEach((w, i) => { if (vm.vCur[i] != null && vm.vPrev[i] != null && !(vm.parcial && vm.parcial.semana === w)) { total++; if (vm.vCur[i] > vm.vPrev[i]) arriba++; } });
+        vm.contexto.forEach((w, i) => { if (w >= 1 && vm.vCur[i] != null && vm.vPrev[i] != null && !(vm.parcial && vm.parcial.semana === w)) { total++; if (vm.vCur[i] > vm.vPrev[i]) arriba++; } });
         if (total >= 2) out.push({ ico: arriba * 2 >= total ? 'up' : 'down', partes: [B(arriba + ' de ' + total), ' semanas completas superaron a ' + prev.season + '.'] });
       }
       let mejor = null;
-      vm.contexto.forEach((w, i) => { if (vm.vCur[i] != null && (!mejor || vm.vCur[i] > mejor.v)) mejor = { w, v: vm.vCur[i] }; });
+      vm.contexto.forEach((w, i) => { if (w >= 1 && vm.vCur[i] != null && (!mejor || vm.vCur[i] > mejor.v)) mejor = { w, v: vm.vCur[i] }; });
       if (mejor && vm.contexto.length > 1) out.push({ ico: 'star', partes: ['La semana más alta fue la ', B('S' + mejor.w), ' (' + u.fmtFecha(u.weekMonday(cur.week1, mejor.w)) + ') con ', B(f(mejor.v)), '.'] });
       // impulso: últimas 4 semanas completas vs 4 anteriores
-      const comp = vm.contexto.filter(w => w <= vm.completa);
+      const comp = vm.contexto.filter(w => w >= 1 && w <= vm.completa);
       if (metrica.tipo !== 'ratio' && comp.length >= 8) {
         const ult = comp.slice(-4), ant = comp.slice(-8, -4);
         const sU = (M.total(cur, metrica, ult, vm.tiposSel, vm.opts) || {}).v, sA = (M.total(cur, metrica, ant, vm.tiposSel, vm.opts) || {}).v;
@@ -438,8 +449,8 @@
       const aa = vm.acPrev ? vm.acPrev[i] : null, ab = vm.acCur[i];
       return {
         w,
-        lunesCur: cur.week1 ? u.weekMonday(cur.week1, w) : null,
-        lunesPrev: prev && prev.week1 ? u.weekMonday(prev.week1, w) : null,
+        lunesCur: cur.week1 && w >= 1 ? u.weekMonday(cur.week1, w) : null,
+        lunesPrev: prev && prev.week1 && w >= 1 ? u.weekMonday(prev.week1, w) : null,
         prev: a, cur: b,
         d: a != null && b != null ? b - a : null,
         p: fmtM === 'pct' ? null : u.variacion(b, a),
@@ -506,7 +517,7 @@
     const est = pct ? 'pct' : 'int';
     vm.detalle.forEach((d, i) => {
       const r = r0 + 1 + i, xr = r + 1;
-      const fila = [{ v: 'Semana ' + d.w + (d.parcial ? ' (parcial)' : ''), s: 'texto' }, { v: d.lunesCur || '', s: 'texto' }];
+      const fila = [{ v: etSem(d.w) + (d.parcial ? ' (parcial)' : ''), s: 'texto' }, { v: d.lunesCur || '', s: 'texto' }];
       if (prev) fila.push({ v: d.lunesPrev || '', s: 'texto' }, { v: d.prev, s: est });
       fila.push({ v: d.cur, s: est });
       const ambos = d.prev != null && d.cur != null;
@@ -540,7 +551,7 @@
         const xr = d2 + 2;
         const comp = vm.detalle.filter(d => d.d != null);
         const sD = u.sum(comp.map(d => d.d)), sP = u.sum(comp.map(d => d.prev)), sC = u.sum(comp.map(d => d.cur));
-        S.fila([{ v: 'Total comparable (sin N/A)', s: 'totTexto' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' },
+        S.fila([{ v: (vm.conNA ? 'Total comparable (incluye N/A)' : 'Total comparable (sin N/A)'), s: 'totTexto' }, { v: '', s: 'totTexto' }, { v: '', s: 'totTexto' },
           { v: sP, f: 'SUMIFS(' + rCol(cP) + ',' + rD + ',"<>")', s: 'totInt' },
           { v: sC, f: 'SUMIFS(' + rCol(cC) + ',' + rD + ',"<>")', s: 'totInt' },
           { v: sD, f: 'SUM(' + rD + ')', s: 'totDInt' },
@@ -560,7 +571,7 @@
     const hx = c => c.replace('#', '').toUpperCase();
     S.grafica({
       tipo: 'col', titulo: 'Comparativo semanal · ' + metrica.etiqueta,
-      categorias: vm.detalle.map(d => 'Semana ' + d.w + (d.parcial ? ' (parcial)' : '')),
+      categorias: vm.detalle.map(d => etSem(d.w) + (d.parcial ? ' (parcial)' : '')),
       cat: { c: 0, r1: d1, r2: d2 },
       series: [
         prev && { nombre: vm.nombrePrev, nombreRef: { c: cP, r: r0 }, c: cP, r1: d1, r2: d2, color: hx(G.EXPORTAR.prev), valores: vm.detalle.map(d => d.prev) },
@@ -589,7 +600,7 @@
     const bloques = [[vm.nombreCur, vm.calor.cur, vm.calor.totCur], vm.prev ? [vm.nombrePrev, vm.calor.prev, vm.calor.totPrev] : null].filter(Boolean);
     bloques.forEach(([nombre, mat, tot]) => {
       H.fila([nombre], { estilo: 'seccion' });
-      const rc = H.fila(['Tipo', ...vm.calor.semanas.map(w => 'S' + w)], { estilo: 'header', alto: 20 });
+      const rc = H.fila(['Tipo', ...vm.calor.semanas.map(w => etS(w))], { estilo: 'header', alto: 20 });
       vm.calor.tipos.forEach((t, k) => H.fila([{ v: t, s: 'texto' }, ...mat[k].map(x => ({ v: x, s: pct ? 'pct' : 'int' }))]));
       const rt = H.fila([{ v: 'Total', s: 'totTexto' }, ...tot.map(x => ({ v: x, s: pct ? 'totPct' : 'totInt' }))]);
       if (vm.calor.tipos.length && vm.calor.semanas.length) H.escala(rc + 1, 1, rt - 1, vm.calor.semanas.length, 'F3F7FC', '1F6FD1');
@@ -878,6 +889,13 @@
         filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Opciones'), el('label', { class: 'switch', title: o.ayuda || '' }, cb, el('span', { class: 'sw' }), el('span', null, o.etiqueta))));
       });
 
+      if (M.tieneNA(vm.cur) || M.tieneNA(vm.prev)) {
+        const cbNA = el('input', { type: 'checkbox', role: 'switch', checked: e.incluirNA !== false });
+        cbNA.addEventListener('change', () => { e.incluirNA = cbNA.checked; cambio(); });
+        filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Previo a la semana 1'),
+          el('label', { class: 'switch', title: 'Suma como «semana 0» (N/A) todo lo anterior al lunes de la semana 1 o sin fecha. Aplica cuando el periodo empieza en la semana 1.' }, cbNA, el('span', { class: 'sw' }), el('span', null, 'Incluir N/A'))));
+      }
+
       const btnReset = filtrosActivos(e) ? el('button', { class: 'chip chip-btn', type: 'button', title: 'Volver a los filtros iniciales' }, '↺ Restablecer filtros') : null;
       if (btnReset) btnReset.addEventListener('click', () => { e = Object.assign({}, ESTADO_INICIAL, { vista: e.vista, calor: e.calor, varModo: e.varModo, mezclaPct: e.mezclaPct }); cambio(); });
       const avisoOpc = (vm.opcionesDistintas || []).map(o => el('span', { class: 'chip chip-warn', title: 'Cada temporada se calcula con la opción con que se procesó, igual que su HTML. Usa el interruptor para igualarlas.' },
@@ -893,6 +911,8 @@
             n + ' semana(s) fuera de rango en ' + s.season + (v ? ' (' + G.fmtValor(v, vm.fmtM) + ')' : ''))),
         vm.prev && vm.prev.week1 && vm.prev.week1 === vm.cur.week1 ? el('span', { class: 'chip chip-warn', title: 'Las dos temporadas tienen el mismo lunes de semana 1: probablemente son la misma temporada guardada con dos etiquetas. Borra una en «Base de datos».' },
           'Misma temporada: ' + vm.cur.season + ' y ' + vm.prev.season + ' tienen el mismo lunes') : null,
+        !vm.conNA && (M.tieneNA(vm.cur) || M.tieneNA(vm.prev)) ? el('span', { class: 'chip chip-warn', title: 'N/A = lo anterior al lunes de la semana 1 o sin fecha. Se suma como «semana 0» cuando el periodo empieza en la semana 1 y el interruptor «Incluir N/A» está encendido.' },
+          'N/A no incluido: ' + (e.incluirNA === false ? 'interruptor apagado' : 'el periodo no empieza en la semana 1')) : null,
         btnReset,
         vm.parcial ? el('span', { class: 'chip chip-warn', title: 'La última semana con datos todavía no termina' }, '* S' + vm.parcial.semana + ' parcial · datos al ' + u.fmtFecha(vm.parcial.corte)) : null].filter(Boolean));
     }
@@ -972,7 +992,7 @@
       const specCalor = {
         titulo, subtitulo: vm.periodo, ejeX: 'Tipo', categorias: c.tipos.concat(['Total']), categoriasLargas: c.tipos.concat(['Total']),
         formato: fmtCelda, tipo: 'colStacked',
-        series: c.semanas.map((w, i) => ({ nombre: 'S' + w, valores: mat.map(f => f[i]).concat([tot[i]]) })),
+        series: c.semanas.map((w, i) => ({ nombre: etS(w), valores: mat.map(f => f[i]).concat([tot[i]]) })),
         archivo: vm.dash.titulo + '_mapa_de_calor'
       };
       menu(btnCopiar, [
@@ -992,8 +1012,8 @@
       const tsv = [cab.join('\t')];
       const dCls = x => x == null ? '' : x > 0 ? 'up' : x < 0 ? 'down' : 'flat';
       vm.detalle.forEach((d, i) => {
-        const celdas = [['Semana ' + d.w + (d.parcial ? ' *' : ''), ''], [u.fmtFecha(d.lunesCur), '']];
-        const crudo = ['Semana ' + d.w + (d.parcial ? ' (parcial)' : ''), d.lunesCur || ''];
+        const celdas = [[etSem(d.w) + (d.parcial ? ' *' : ''), ''], [u.fmtFecha(d.lunesCur), '']];
+        const crudo = [etSem(d.w) + (d.parcial ? ' (parcial)' : ''), d.lunesCur || ''];
         if (prev) {
           celdas.push([u.fmtFecha(d.lunesPrev), ''], [f(d.prev), 'num'], [f(d.cur), 'num strong'],
             [pct ? u.fmtPp(d.d) : u.fmtSignedInt(d.d), 'num ' + dCls(d.d)]);

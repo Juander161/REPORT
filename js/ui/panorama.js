@@ -69,13 +69,15 @@
     const optsDe = s => { const o = {}; (dash.opciones || []).forEach(op => { o[op.id] = !!(s && s.meta && s.meta.config && s.meta.config[op.id]); }); return o; };
     const opts = optsDe(cur), optsP = optsDe(prev);
     const ult = M.ultimaSemana(cur), ultP = M.ultimaSemana(prev);
-    const ws = u.rango(1, ult);
+    // lo previo a la semana 1 (N/A) cuenta como «semana 0»
+    const conNA = M.tieneNA(cur) || M.tieneNA(prev);
+    const ws = (conNA ? [0] : []).concat(u.rango(1, ult));
     const tc = M.total(cur, metrica, ws, null, opts);
     const tp = prev ? M.total(prev, metrica, ws.filter(w => w <= ultP), null, optsP) : null;
     const p = tc && tp ? u.variacion(tc.v, tp.v) : null;
 
     card.appendChild(el('div', { class: 'pano-hero' },
-      el('div', { class: 'pano-l' }, metrica.etiqueta + ' · temporada ' + cur.season + ' a la fecha (semanas 1–' + ult + ')'),
+      el('div', { class: 'pano-l' }, metrica.etiqueta + ' · temporada ' + cur.season + ' a la fecha (semanas 1–' + ult + (conNA ? ' + N/A' : '') + ')'),
       el('div', { class: 'pano-v' }, u.fmtInt(tc && tc.v)),
       p != null ? el('div', { class: 'kpi-d ' + (p > 0 ? 'up' : p < 0 ? 'down' : 'flat') },
         el('span', { class: 'kpi-arrow', 'aria-hidden': 'true' }, p > 0 ? '▲' : p < 0 ? '▼' : '■'),
