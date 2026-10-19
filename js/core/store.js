@@ -8,7 +8,7 @@
   'use strict';
 
   const DB_NAME = 'report-hub';
-  const DB_VER = 1;
+  const DB_VER = 2;
   const canal = ('BroadcastChannel' in window) ? new BroadcastChannel('report-hub-db') : null;
   const oyentes = new Set();
   let dbp = null;
@@ -24,6 +24,11 @@
           s.createIndex('dataset', 'dataset');
         }
         if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
+        // historial: cada actualización reemplazada de una temporada se conserva como «versión»
+        if (!db.objectStoreNames.contains('versiones')) {
+          const v = db.createObjectStore('versiones', { keyPath: 'vid' });
+          v.createIndex('id', 'id');
+        }
       };
       rq.onsuccess = () => {
         const db = rq.result;
@@ -70,6 +75,39 @@
 
     async snapshot(id) { return tx('snapshots', 'readonly', s => req(s.get(id))); },
 
+    // ------------------------------------------------ historial de actualizaciones (versiones)
+    /** vid de una versión: id de la temporada + momento en que se procesó */
+    vidDe(snap) { return snap.id + '@' + ((snap.meta && snap.meta.procesado) || snap.updatedAt || ''); },
+
+    async versiones(id) {
+      const todas = await tx('versiones', 'readonly', s => req(s.getAll()));
+      return id ? todas.filter(v => v.id === id) : todas;
+    },
+
+    /** Conserva una copia de la temporada tal como estaba (antes de reemplazarla) */
+    async archivar(snap) {
+      if (!snap || snap.demo) return;
+      const copia = Object.assign({}, snap, { vid: store.vidDe(snap), archivadoEn: new Date().toISOString() });
+      await tx('versiones', 'readwrite', s => req(s.put(copia)));
+    },
+
+    /** Agrega versiones que llegan de otra computadora (las ya existentes no se tocan) */
+    async guardarVersiones(lista) {
+      if (!lista.length) return 0;
+      const existentes = new Set((await store.versiones()).map(v => v.vid));
+      const nuevas = lista.filter(v => v && v.vid && !existentes.has(v.vid));
+      if (!nuevas.length) return 0;
+      await tx('versiones', 'readwrite', s => { nuevas.forEach(v => s.put(v)); });
+      avisar({ tipo: 'versiones', origen: 'compartida' });
+      return nuevas.length;
+    },
+
+    async borrarVersiones(vids) {
+      vids = Array.isArray(vids) ? vids : [vids];
+      await tx('versiones', 'readwrite', s => { vids.forEach(v => s.delete(v)); });
+      avisar({ tipo: 'versiones', borrado: true, origen: 'local' });
+    },
+
     /** Guarda uno o varios snapshots. Al guardar datos reales de un dataset se
         retiran los datos de demostración de ese mismo dataset. */
     async guardar(lista, opts = {}) {
@@ -78,6 +116,14 @@
       const reales = new Set(lista.filter(s => !s.demo).map(s => s.dataset));
       const previos = reales.size ? await store.snapshots() : [];
       const borrarDemo = previos.filter(p => p.demo && reales.has(p.dataset)).map(p => p.id);
+      // al reprocesar una temporada desde un reporte, la actualización anterior queda en el historial
+      if (opts.origen === 'reporte') {
+        for (const snap of lista) {
+          const id = snap.id || store.idDe(snap.dataset, snap.season);
+          const previo = !snap.demo && await store.snapshot(id);
+          if (previo && !previo.demo && store.vidDe(previo) !== store.vidDe(Object.assign({ id }, snap))) await store.archivar(previo);
+        }
+      }
       await tx('snapshots', 'readwrite', s => {
         for (const id of borrarDemo) s.delete(id);
         for (const snap of lista) {
@@ -98,6 +144,8 @@
       ids = Array.isArray(ids) ? ids : [ids];
       const lista = await Promise.all(ids.map(id => store.snapshot(id)));
       await tx('snapshots', 'readwrite', s => { for (const id of ids) s.delete(id); });
+      const vids = (await store.versiones()).filter(v => ids.includes(v.id)).map(v => v.vid);
+      if (vids.length) await tx('versiones', 'readwrite', s => { vids.forEach(v => s.delete(v)); });
       // las "tumbas" evitan que la base compartida vuelva a traer lo que se borró a propósito
       const tumbas = await store.ajuste('tombstones', {});
       const ahora = new Date().toISOString();

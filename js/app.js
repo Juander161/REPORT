@@ -24,20 +24,57 @@
   const svg = n => '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">' + (ICONOS[n] || ICONOS.reporte) + '</svg>';
 
   // ---------------------------------------------------------------- menú lateral
+  // Secciones plegables, modo compacto (solo íconos) y estado de cada tablero; todo se recuerda por persona.
+  const NAV_KEY = 'rh-nav';
+  const navPrefs = Object.assign({ compacto: false, cerradas: { reportes: true } }, u.lsGet(NAV_KEY, {}));
+  navPrefs.cerradas = navPrefs.cerradas || {};
+  const guardarNav = () => u.lsSet(NAV_KEY, navPrefs);
+
   function menuLateral() {
     const nav = u.$('#nav');
-    const item = (href, texto, ico, extra) => el('a', { class: 'nav-i', href, 'data-ruta': href, html: svg(ico) + '<span>' + u.esc(texto) + '</span>' + (extra || '') });
+    const item = (href, texto, ico, extra, sub) => el('a', { class: 'nav-i', href, 'data-ruta': href, title: texto,
+      html: svg(ico) + '<span class="t"><span class="t-n">' + u.esc(texto) + '</span>' + (sub ? '<small class="nav-sub" data-sub="' + sub + '"></small>' : '') + '</span>' + (extra || '') });
+    const seccion = (id, titulo, hijos) => {
+      const cerrada = !!navPrefs.cerradas[id];
+      const cuerpo = el('div', { class: 'nav-grp', hidden: cerrada, 'data-grp': id }, ...hijos);
+      const cab = el('button', { class: 'nav-sec nav-sec-b', type: 'button', 'aria-expanded': String(!cerrada), 'data-sec': id, title: titulo }, el('span', null, titulo), el('i', { class: 'chev', 'aria-hidden': 'true' }, '▾'));
+      cab.addEventListener('click', () => {
+        const c = !cuerpo.hidden;
+        cuerpo.hidden = c; cab.setAttribute('aria-expanded', String(!c));
+        navPrefs.cerradas[id] = c; guardarNav();
+      });
+      return [cab, cuerpo];
+    };
     nav.replaceChildren(
-      el('div', { class: 'nav-sec' }, 'Dashboards'),
-      item('#/panorama', 'Panorama general', 'panorama'),
-      ...reg.dashboards.map(d => item('#/dash/' + d.id, d.titulo, d.id, d.estado === 'pendiente' ? '<em class="nav-badge">pronto</em>' : '')),
-      el('div', { class: 'nav-sec' }, 'Reportes · actualizar datos'),
-      ...reg.reportes.map(r => item('#/reporte/' + r.id, r.titulo, r.archivo ? 'reporte' : 'pendiente', !r.archivo ? '<em class="nav-badge">pendiente</em>' : '')),
-      el('div', { class: 'nav-sec' }, 'Análisis'),
-      item('#/proyeccion', 'Proyección de temporada', 'proyeccion'),
-      el('div', { class: 'nav-sec' }, 'Datos'),
-      item('#/datos', 'Base de datos (Excel)', 'datos', '<span class="nav-sync" id="navSync" hidden></span>'),
-      item('#/ayuda', 'Guía de uso', 'ayuda'));
+      ...seccion('dashboards', 'Dashboards', [
+        item('#/panorama', 'Panorama general', 'panorama'),
+        ...reg.dashboards.map(d => item('#/dash/' + d.id, d.titulo, d.id, (d.estado === 'pendiente' ? '<em class="nav-badge">pronto</em>' : '') + '<i class="nav-dot" data-dot="' + d.id + '"></i>', d.id))]),
+      ...seccion('reportes', 'Reportes · actualizar datos', reg.reportes.map(r => item('#/reporte/' + r.id, r.titulo, r.archivo ? 'reporte' : 'pendiente', !r.archivo ? '<em class="nav-badge">pendiente</em>' : ''))),
+      ...seccion('analisis', 'Análisis', [item('#/proyeccion', 'Proyección de temporada', 'proyeccion')]),
+      ...seccion('datos', 'Datos', [
+        item('#/datos', 'Base de datos (Excel)', 'datos', '<span class="nav-sync" id="navSync" hidden></span>'),
+        item('#/ayuda', 'Guía de uso', 'ayuda')]));
+    aplicarCompacto();
+    const b = u.$('#btnCompacto');
+    if (b) b.addEventListener('click', () => { navPrefs.compacto = !navPrefs.compacto; guardarNav(); aplicarCompacto(); });
+  }
+
+  function aplicarCompacto() {
+    document.querySelector('.app').classList.toggle('side-compact', !!navPrefs.compacto);
+    const b = u.$('#btnCompacto');
+    if (b) { b.setAttribute('aria-pressed', String(!!navPrefs.compacto)); b.title = navPrefs.compacto ? 'Expandir la barra lateral' : 'Contraer la barra lateral'; b.setAttribute('aria-label', b.title); }
+  }
+
+  /** Punto de estado y fecha de la última actualización de cada tablero */
+  function actualizarEstadoMenu() {
+    reg.dashboards.forEach(d => {
+      const propios = snaps.filter(s => s.dataset === d.dataset);
+      const reales = propios.filter(s => !s.demo);
+      const ultimo = (reales.length ? reales : propios).map(s => String((s.meta && s.meta.procesado) || s.updatedAt || '')).sort().pop();
+      const dot = u.$('[data-dot="' + d.id + '"]'), sub = u.$('[data-sub="' + d.id + '"]');
+      if (dot) dot.className = 'nav-dot ' + (!propios.length ? 'off' : reales.length ? 'ok' : 'demo');
+      if (sub) sub.textContent = !propios.length ? 'sin datos' : (reales.length ? 'act. ' : 'demo · ') + (ultimo ? u.fmtFecha(ultimo.slice(0, 10)) : '');
+    });
   }
 
   function marcarMenu(hash) {
@@ -46,6 +83,10 @@
       a.classList.toggle('on', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+    // si la página actual está en una sección plegada, se abre (sin cambiar lo que la persona dejó guardado)
+    const activo = u.$('.nav-i.on');
+    const grp = activo && activo.closest('.nav-grp');
+    if (grp && grp.hidden) { grp.hidden = false; const cab = u.$('[data-sec="' + grp.dataset.grp + '"]'); if (cab) cab.setAttribute('aria-expanded', 'true'); }
   }
 
   // ---------------------------------------------------------------- rutas
@@ -92,6 +133,7 @@
       else if (r.seccion === 'ayuda') { titulo = 'Guía de uso'; mostrarVista('ayuda', c => RH.ayuda.montar(c)); }
       else { clave = 'panorama'; mostrarVista('panorama', c => RH.panorama.montar(c)); }
     }
+    actualizarEstadoMenu();
     marcarMenu(r.seccion === 'panorama' || !location.hash ? '#/panorama' : r.hash);
     document.title = titulo + ' · ' + reg.app.nombre;
     u.$('#crumb').textContent = titulo;

@@ -46,7 +46,24 @@
       let lista = snaps.filter(s => s.dataset === dataset);
       if (clave != null) lista = lista.filter(s => M.claveVar(s) === clave);
       lista = lista.map(s => (s.meta && s.meta.temporada != null) ? Object.assign({}, s, { season: String(s.meta.temporada) }) : s);
-      return lista.sort((a, b) => (b.week1 || '').localeCompare(a.week1 || '') || String(b.season).localeCompare(String(a.season)));
+      // primero las temporadas vigentes y después sus actualizaciones anteriores (historial)
+      return lista.sort((a, b) => (b.week1 || '').localeCompare(a.week1 || '') || (a.historica ? 1 : 0) - (b.historica ? 1 : 0) ||
+        (a.historica ? String(((b.meta || {}).procesado) || '').localeCompare(String(((a.meta || {}).procesado) || '')) : String(b.season).localeCompare(String(a.season))));
+    },
+
+    /** Versiones archivadas como «temporadas históricas» para poder verlas y compararlas (id = vid) */
+    versionesComoSnaps(versiones) {
+      const hechos = (versiones || []).filter(v => v && !v.demo).map(v => {
+        const base = v.meta && v.meta.temporada != null ? String(v.meta.temporada) : String(v.season);
+        return { v, base, corte: M.corte(v) };
+      });
+      const usados = new Map();
+      return hechos.map(({ v, base, corte }) => {
+        let etiqueta = base + ' · act. ' + (corte ? u.fmtFecha(corte) : u.fmtFechaHora((v.meta && v.meta.procesado) || v.archivadoEn));
+        const n = (usados.get(base + etiqueta) || 0) + 1; usados.set(base + etiqueta, n);
+        if (n > 1) etiqueta += ' (' + n + ')';
+        return Object.assign({}, v, { id: v.vid, baseId: v.id, historica: true, season: etiqueta, meta: Object.assign({}, v.meta, { temporada: etiqueta, origenVersion: true }) });
+      });
     },
 
     /** Clave de variante de una temporada guardada ('' si el dataset no tiene variantes) */

@@ -16,7 +16,7 @@
   const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
   // ---------------------------------------------------------------- snapshots -> libro
-  async function aLibro(snaps, tumbas) {
+  async function aLibro(snaps, tumbas, versiones) {
     const X = RH.xlsx;
     const wb = X.libro({ titulo: 'Report Hub · Base de datos' });
     const reg = RH.registro;
@@ -85,6 +85,26 @@
     B.ancho([30, 28]);
     B.fila(['ID', 'Borrado'], { estilo: 'header', alto: 22 });
     Object.keys(tumbas || {}).sort().forEach(id => B.fila([{ v: id, s: 'texto' }, { v: tumbas[id], s: 'texto' }]));
+
+    // historial de actualizaciones: una fila por versión + sus datos en formato largo
+    versiones = (versiones || []).filter(v => !v.demo).sort((a, b) => a.vid.localeCompare(b.vid));
+    if (versiones.length) {
+      const V = wb.hoja('Versiones', { tab: 'C9A227' });
+      V.ancho([44, 24, 14, 16, 14, 26, 34, 60]);
+      V.fila(['Versión', 'ID', 'Dataset', 'Temporada', 'Lunes semana 1', 'Procesado', 'Archivo origen', 'Configuración (JSON)'], { estilo: 'header', alto: 26 });
+      const DV = wb.hoja('DatosVersiones', { tab: '7F93B0' });
+      DV.ancho([44, 9, 30, 12, 10]);
+      DV.fila(['Versión', 'Semana', 'Tipo', 'Campo', 'Valor'], { estilo: 'header', alto: 22 });
+      for (const v of versiones) {
+        const meta = Object.assign({}, v.meta || {}); delete meta.origen;
+        V.fila([{ v: v.vid, s: 'texto' }, { v: v.id, s: 'texto' }, { v: v.dataset, s: 'texto' }, { v: String(v.season), s: 'texto' }, { v: v.week1 || '', s: 'texto' },
+          { v: meta.procesado || '', s: 'texto' }, { v: (meta.archivo && meta.archivo.nombre) || '', s: 'texto' }, { v: JSON.stringify(meta), s: 'texto' }]);
+        const bloques = Object.assign({}, v.weeks || {}); if (v.na) bloques['N/A'] = v.na;
+        for (const w of Object.keys(bloques)) for (const t of Object.keys(bloques[w]).sort()) for (const [campo, valor] of Object.entries(bloques[w][t])) {
+          DV.fila([{ v: v.vid, s: 'texto' }, w === 'N/A' ? { v: 'N/A', s: 'texto' } : { v: +w, s: 'int' }, { v: t, s: 'texto' }, { v: campo, s: 'texto' }, { v: +valor || 0, s: 'int' }]);
+        }
+      }
+    }
 
     return wb.blob();
   }
@@ -159,7 +179,30 @@
         }
       }
     }
-    return { snaps: [...snaps.values()], tumbas, duplicados };
+    // historial de actualizaciones (si el libro lo trae)
+    const versiones = [];
+    const VV = buscarHoja('Versiones'), DD = buscarHoja('DatosVersiones');
+    if (VV && VV.length > 1 && DD) {
+      const cv = (VV[0] || []).map(norm), iv = n => cv.indexOf(norm(n));
+      const mapa = new Map();
+      for (let r = 1; r < VV.length; r++) {
+        const f = VV[r] || [];
+        const vid = f[iv('Versión')]; if (!vid) continue;
+        let meta = {}; try { meta = JSON.parse(f[iv('Configuración (JSON)')] || '{}') || {}; } catch (e) { meta = {}; }
+        mapa.set(String(vid), { vid: String(vid), id: String(f[iv('ID')]), dataset: String(f[iv('Dataset')]), season: String(f[iv('Temporada')]), week1: fechaIso(f[iv('Lunes semana 1')]), types: [], weeks: {}, na: null, meta, updatedAt: String(meta.procesado || '') });
+      }
+      const cd = (DD[0] || []).map(norm), id_ = n => cd.indexOf(norm(n));
+      for (let r = 1; r < DD.length; r++) {
+        const f = DD[r] || []; const v = mapa.get(String(f[id_('Versión')])); if (!v) continue;
+        const w = f[id_('Semana')], t = String(f[id_('Tipo')] == null ? '' : f[id_('Tipo')]), campo = String(f[id_('Campo')] || '');
+        const val = typeof f[id_('Valor')] === 'number' ? f[id_('Valor')] : parseFloat(String(f[id_('Valor')] || '0').replace(/,/g, '')) || 0;
+        let bloque;
+        if (norm(w) === 'n/a') bloque = v.na || (v.na = {}); else { const wn = parseInt(w, 10); if (!(wn >= 1)) continue; bloque = v.weeks[wn] || (v.weeks[wn] = {}); }
+        (bloque[t] || (bloque[t] = {}))[campo] = val;
+      }
+      mapa.forEach(v => { const ts = new Set(); Object.values(v.weeks).forEach(b => Object.keys(b).forEach(t => ts.add(t))); v.types = [...ts].sort(); versiones.push(v); });
+    }
+    return { snaps: [...snaps.values()], tumbas, duplicados, versiones };
   }
 
   function fechaIso(v) {
@@ -234,7 +277,9 @@
     if (guardar.length) await store.guardar(guardar, { origen });
     if (borrar.length) await store.borrar(borrar, { origen, tumbas });
     await store.fijar('tombstones', tumbas);
-    return { nuevos, actualizados, iguales, borrados: borrar.length, total: entrantes.size, otraConfig };
+    // historial: se agregan las versiones que faltan (no se pisan las existentes) salvo las de temporadas borradas
+    const versNuevas = await store.guardarVersiones((base.versiones || []).filter(v => !tumbas[v.id]));
+    return { nuevos, actualizados, iguales, borrados: borrar.length, total: entrantes.size, otraConfig, versiones: versNuevas };
   }
 
   /** Compatibilidad: fusiona una lista de temporadas sin borrados */
@@ -246,7 +291,7 @@
   async function exportar() {
     const snaps = (await store.snapshots()).filter(s => !s.demo);
     if (!snaps.length) { u.toast('Todavía no hay temporadas guardadas para exportar.', { tipo: 'warn' }); return; }
-    const blob = await aLibro(snaps, await store.ajuste('tombstones', {}));
+    const blob = await aLibro(snaps, await store.ajuste('tombstones', {}), await store.versiones());
     u.descargar(blob, NOMBRE);
     u.toast('Base exportada como ' + NOMBRE + ' (' + snaps.length + ' temporadas).', { tipo: 'ok' });
   }
@@ -350,14 +395,15 @@
   async function contenidoPublicacion() {
     const snaps = (await store.snapshots()).filter(s => !s.demo);
     const tumbas = await store.ajuste('tombstones', {});
-    const blob = await aLibro(snaps, tumbas);
+    const blob = await aLibro(snaps, tumbas, await store.versiones());
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const version = new Date().toISOString();
     const js = '/* Report Hub · base compartida (generada ' + version + '). No editar a mano: la genera la app. */\n' +
       'window.RH_BASE_COMPARTIDA = ' + JSON.stringify({ v: version, n: snaps.length, xlsx: aBase64(bytes) }) + ';\n';
-    return { blob, js, version, n: snaps.length, firma: firmaPublicacion(snaps, tumbas) };
+    const vers = await store.versiones();
+    return { blob, js, version, n: snaps.length, firma: firmaPublicacion(snaps, tumbas, vers) };
   }
-  const firmaPublicacion = (snaps, tumbas) => JSON.stringify([snaps.map(s => [s.id, s.updatedAt]).sort(), Object.entries(tumbas || {}).sort()]);
+  const firmaPublicacion = (snaps, tumbas, vers) => JSON.stringify([snaps.map(s => [s.id, s.updatedAt]).sort(), Object.entries(tumbas || {}).sort(), (vers || []).map(v => v.vid).sort()]);
 
   async function descargarPublicacion() {
     const c = await contenidoPublicacion();
@@ -528,8 +574,11 @@
       const actuales = (await store.snapshots()).filter(s => !s.demo);
       const tumbas = await store.ajuste('tombstones', {});
       let escrito = false;
-      if (archivo.size === 0 || firmaCompleta(actuales) !== firmaCompleta(base.snaps) || estable(tumbas) !== estable(base.tumbas)) {
-        const blob = await aLibro(actuales, tumbas);
+      const versLoc = await store.versiones();
+      const vidsArchivo = new Set((base.versiones || []).map(v => v.vid));
+      const hayVersionesNuevas = versLoc.some(v => !vidsArchivo.has(v.vid));
+      if (archivo.size === 0 || firmaCompleta(actuales) !== firmaCompleta(base.snaps) || estable(tumbas) !== estable(base.tumbas) || hayVersionesNuevas) {
+        const blob = await aLibro(actuales, tumbas, versLoc);
         try {
           const w = await h.createWritable();
           await w.write(blob);

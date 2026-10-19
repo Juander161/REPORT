@@ -51,7 +51,7 @@
     let prev = null;
     if (e.prev !== 'none') {
       prev = temporadas.find(s => s.id === e.prev && s.id !== cur.id) ||
-        temporadas.find(s => s.id !== cur.id && (s.week1 || '') < (cur.week1 || '')) || null;
+        temporadas.find(s => s.id !== cur.id && !s.historica && (s.week1 || '') < (cur.week1 || '')) || null;
     }
     const metrica = dash.metricas.find(m => m.id === e.metrica) || dash.metricas.find(m => m.id === dash.principal) || dash.metricas[0];
     const principal = dash.metricas.find(m => m.id === dash.principal) || dash.metricas[0];
@@ -744,6 +744,7 @@
   function montar(cont, dash) {
     let e = estadoDe(dash.id);
     let snaps = [];
+    let versiones = [];     // actualizaciones anteriores de cada temporada (historial)
     let vm = null;
     const guardar = () => { try { sessionStorage.setItem('rh-dash-' + dash.id, JSON.stringify(e)); } catch (err) { /* sin almacenamiento */ } };
 
@@ -820,7 +821,7 @@
         filtros.appendChild(el('div', { class: 'f-g' }, el('span', { class: 'f-l' }, 'Producto y medida'), selVar));
       }
       const temps = vm.temporadas;
-      const optTemp = (s, sel) => el('option', { value: s.id, selected: s.id === sel }, s.season + (s.demo ? ' (demo)' : ''));
+      const optTemp = (s, sel) => el('option', { value: s.id, selected: s.id === sel }, s.season + (s.demo ? ' (demo)' : '') + (!s.historica && temps.some(x => x.baseId === s.id) ? ' · actual' : ''));
       const selCur = el('select', { 'aria-label': 'Temporada actual' }, temps.map(s => optTemp(s, vm.cur.id)));
       selCur.addEventListener('change', () => { e.cur = selCur.value; if (e.prev === selCur.value) e.prev = null; cambio(); });
       const selPrev = el('select', { 'aria-label': 'Temporada de comparación' },
@@ -909,7 +910,8 @@
         ...[[vm.cur, vm.fueraCur, vm.fueraCurV], [vm.prev, vm.fueraPrev, vm.fueraPrevV]].filter(x => x[0] && x[1]).map(([s, n, v]) =>
           el('span', { class: 'chip chip-warn', title: 'Hay filas con fechas que caen en semanas mayores a ' + M.MAX_SEMANA + ' (probablemente un año mal capturado). No se grafican; aparecen en la «Tabla del reporte».' },
             n + ' semana(s) fuera de rango en ' + s.season + (v ? ' (' + G.fmtValor(v, vm.fmtM) + ')' : ''))),
-        vm.prev && vm.prev.week1 && vm.prev.week1 === vm.cur.week1 ? el('span', { class: 'chip chip-warn', title: 'Las dos temporadas tienen el mismo lunes de semana 1: probablemente son la misma temporada guardada con dos etiquetas. Borra una en «Base de datos».' },
+        vm.prev && (vm.prev.baseId || vm.prev.id) === (vm.cur.baseId || vm.cur.id) ? el('span', { class: 'chip', title: 'Las dos son la misma temporada en distintos momentos: la diferencia es lo que cambió entre actualizaciones.' }, 'Comparando dos actualizaciones de la misma temporada') : null,
+        vm.prev && vm.prev.week1 && vm.prev.week1 === vm.cur.week1 && (vm.prev.baseId || vm.prev.id) !== (vm.cur.baseId || vm.cur.id) ? el('span', { class: 'chip chip-warn', title: 'Las dos temporadas tienen el mismo lunes de semana 1: probablemente son la misma temporada guardada con dos etiquetas. Borra una en «Base de datos».' },
           'Misma temporada: ' + vm.cur.season + ' y ' + vm.prev.season + ' tienen el mismo lunes') : null,
         !vm.conNA && (M.tieneNA(vm.cur) || M.tieneNA(vm.prev)) ? el('span', { class: 'chip chip-warn', title: 'N/A = lo anterior al lunes de la semana 1 o sin fecha. Se suma como «semana 0» cuando el periodo empieza en la semana 1 y el interruptor «Incluir N/A» está encendido.' },
           'N/A no incluido: ' + (e.incluirNA === false ? 'interruptor apagado' : 'el periodo no empieza en la semana 1')) : null,
@@ -1058,7 +1060,7 @@
       const m = cur.meta || {};
       const partes = [];
       partes.push(el('span', { class: 'dot ' + (cur.demo ? 'dot-demo' : 'dot-ok') }));
-      partes.push(el('span', null, 'Temporada ' + cur.season + ': ' + (cur.demo ? 'datos de demostración' : 'actualizada ' + u.fmtFechaHora(m.procesado || cur.updatedAt))));
+      partes.push(el('span', null, 'Temporada ' + cur.season + ': ' + (cur.demo ? 'datos de demostración' : (cur.historica ? 'versión archivada, procesada ' : 'actualizada ') + u.fmtFechaHora(m.procesado || cur.updatedAt))));
       if (m.archivo && m.archivo.nombre && !cur.demo) partes.push(el('span', { class: 'muted' }, ' · ' + m.archivo.nombre));
       if (vm.prev) partes.push(el('span', { class: 'muted' }, ' · Comparada con ' + vm.prev.season + (vm.prev.meta && vm.prev.meta.origen === 'compartida' ? ' (base compartida)' : '')));
       frescura.replaceChildren(...partes);
@@ -1089,7 +1091,7 @@
 
     // ---------- render principal
     function render() {
-      vm = calcular(dash, snaps, e);
+      vm = calcular(dash, snaps.concat(versiones), e);
       const hayDatos = !vm.vacio && dash.estado !== 'pendiente';
       vacio.hidden = hayDatos;
       [filtros.parentElement, kpiCaja, grid].forEach(n => { n.hidden = !hayDatos; });
@@ -1158,7 +1160,11 @@
     }
 
     return {
-      actualizar(lista) { snaps = lista; render(); },
+      async actualizar(lista) {
+        snaps = lista;
+        try { versiones = M.versionesComoSnaps(await RH.store.versiones()); } catch (err) { versiones = []; }
+        render();
+      },
       retematizar() { [cSemanal, cVar, cTipo, cPart, cMezcla].forEach(c => c.h && c.h.retematizar()); },
       get vm() { return vm; }
     };
