@@ -102,6 +102,7 @@
         <li>En <strong>Gowns activas (2 archivos)</strong> carga <strong>A1</strong> y <strong>A2</strong> y elige en cada uno la columna del <strong>número de orden</strong>, la de <strong>fecha</strong> y la de <strong>tipo</strong> (pueden llamarse distinto).</li>
         <li>Cada orden se cuenta <strong>una sola vez</strong> aunque esté en los dos archivos (o repetida en uno). Si hay repetidas, eliges de cuál archivo se toman los datos.</li>
         <li>Pulsa <strong>Detectar tipos</strong>: aparecen todos los nombres de tipo de los archivos y eliges a qué grupo (GREG, COLL…) corresponde cada uno, o «Ignorar».</li>
+        <li>Para <strong>comparar con tu revisión manual</strong> usa el panel «Auditoría» que aparece al procesar: conteos equivalentes a <code>UNIQUE(VSTACK(…))</code>, sumas «todas» y «por tipo agrupado», descarga del detalle (una fila por orden única) y comparación contra tu lista de números de orden.</li>
         <li>En <strong>Productos</strong> indica la columna de cada producto en A1 y en A2, y elige cantidades y/u órdenes. Se guarda un reporte por producto y medida (<code>producto_temporada_sum</code> / <code>_count</code>) en el dashboard <strong>GOWNS ACTIVAS</strong>.</li>
       </ol>
     </section>

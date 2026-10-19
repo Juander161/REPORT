@@ -250,8 +250,14 @@ semana 1. Todo es seleccionable por archivo: columna de número de orden, de fec
 formato de fecha, y la columna de cada producto (que puede llamarse distinto en A1 y A2). Los
 nombres de tipo se detectan y se agrupan en GREG, COLL u otros grupos que definas (o se
 ignoran). Se guarda un reporte por producto y medida en el dashboard **GOWNS ACTIVAS**.
-Comprobado contra un cálculo independiente (5 002 órdenes únicas, 1 200 repetidas entre
-archivos, identificadores en tres formatos, tipos con nombres variados).
+Equivale a tu proceso manual: `UNIQUE(VSTACK(A1; A2))` + `IFERROR(XLOOKUP(A1), XLOOKUP(A2))`
+(si una orden está en ambos, se toman los datos de A1; se puede cambiar a A2). Las filas sin número
+de orden se excluyen (en Excel tampoco se encuentran). Al procesar aparece un panel de **auditoría**:
+conteos comparables con tu hoja, sumas por producto de todas las órdenes y de las agrupadas por tipo
+(y cuánto viene de A1 y de A2), descarga del detalle (una fila por orden única, como tu hoja con los
+valores traídos) y una comparación contra tu lista de números de orden. La casilla «OTROS» cuenta los
+tipos sin grupo para poder cuadrar contra el total de todas las órdenes. Comprobado contra un cálculo
+independiente con CSV y con Excel (5 000 órdenes únicas, 1 200 repetidas entre archivos).
 
 ## Proyección de temporada
 
