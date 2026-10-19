@@ -259,6 +259,35 @@ valores traídos) y una comparación contra tu lista de números de orden. La ca
 tipos sin grupo para poder cuadrar contra el total de todas las órdenes. Comprobado contra un cálculo
 independiente con CSV y con Excel (5 000 órdenes únicas, 1 200 repetidas entre archivos).
 
+## TASSELS ONLY y HOMESHIP con dos archivos
+
+`reportes/dos-archivos.html` (menú Reportes → «Tassels Only (2 archivos)» y «Homeship (2 archivos)»)
+aplica la misma lógica de órdenes únicas de GOWNS ACTIVAS: se cargan A1 y A2, se identifica cada orden
+una sola vez por su número (si está en los dos, se usan los datos del archivo elegido) y después se
+aplica exactamente la lógica del reporte de un archivo (Tassels Only: objetivo > 0 y las demás en 0;
+Homeship: filtro por palabra menos Tassels Only). Por archivo se eligen las columnas de orden, fecha,
+tipo y filtro, y para cada columna QTY cuál es en A1 y en A2. Guarda en el mismo dashboard y trae el
+panel de auditoría. Comprobado contra un cálculo independiente (4 000 órdenes únicas, 900 repetidas).
+
+## Compartir los datos con todo el equipo (solo archivos, sin links)
+
+Pensado para cuando no se pueden usar links ni servidores:
+
+1. La carpeta de la app se comparte como carpeta (red, Teams/OneDrive sincronizada, USB o un .zip).
+2. Quien actualiza los datos entra a **Base de datos → Publicar para el equipo → Elegir carpeta de la
+   app** (Chrome o Edge, una sola vez). A partir de ahí, cada vez que guarda una temporada la app
+   escribe sola `data/REPORT_DB.xlsx` y `data/base-compartida.js`. En otros navegadores:
+   «Descargar archivos de publicación» y copiarlos a `data/`.
+3. Las demás personas abren `index.html` desde esa carpeta. La app carga `data/base-compartida.js`
+   (un archivo .js con la base dentro, que funciona incluso abriendo la carpeta directamente, sin
+   servidor ni red) al abrir y cada minuto mientras está abierta, y combina las temporadas con las que
+   ya tenga esa computadora (gana la versión más reciente de cada temporada; lo borrado también se
+   propaga). No hay que enviarles nada.
+
+Límites: al abrir como carpeta (`file://`) no hay instalación ni modo sin conexión de PWA (se necesita
+http/https); en Chrome/Edge el permiso de escritura de la carpeta puede pedirse otra vez al reabrir el
+navegador («Publicar ahora»). La sincronización de OneDrive/Teams puede tardar en llegar a los demás.
+
 ## Proyección de temporada
 
 La vista **Proyección de temporada** estima el cierre de la temporada actual con las

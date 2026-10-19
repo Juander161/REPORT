@@ -107,6 +107,21 @@
       </ol>
     </section>
 
+    <section class="card span-6 guide" id="dos-archivos">
+      <h3 class="card-t">TASSELS ONLY y HOMESHIP con dos archivos</h3>
+      <p>En Reportes hay una versión «(2 archivos)» de cada uno. Cargas A1 y A2, eliges las columnas de cada archivo (número de orden, fecha, tipo y, en Homeship, el filtro; y la columna de cada QTY), y la app cuenta cada orden <strong>una sola vez</strong> y aplica la misma lógica del reporte de un archivo. Guarda en el mismo dashboard y trae el panel de auditoría para comparar con tu revisión manual.</p>
+    </section>
+
+    <section class="card span-6 guide" id="distribuir">
+      <h3 class="card-t">Compartir los datos con todo el equipo (solo archivos)</h3>
+      <ol>
+        <li>Pon la <strong>carpeta de la app</strong> en un lugar compartido (carpeta de red, Teams/OneDrive sincronizada…).</li>
+        <li>Quien actualiza abre <strong>Base de datos → Publicar para el equipo → Elegir carpeta de la app</strong> (una sola vez). Desde entonces, cada temporada que guarda se publica sola en <code>data/</code>.</li>
+        <li>Los demás <strong>abren la app desde esa carpeta</strong>: reciben los datos al abrirla y cada minuto mientras está abierta. No hay links ni envíos.</li>
+        <li>Si el navegador no permite elegir carpetas, usa «Descargar archivos de publicación» y copia los dos archivos a <code>data/</code>.</li>
+      </ol>
+    </section>
+
     <section class="card span-6 guide" id="privacidad">
       <h3 class="card-t">8 · Privacidad y seguridad</h3>
       <ul>
