@@ -117,6 +117,27 @@
           }, 'primary'),
           enlace ? btn('Quitar enlace', async () => { await RH.dbx.olvidarEnlace(); render(); }) : null));
 
+      // ---------- distribución solo con archivos: publicar y recibir
+      const pubE = RH.dbx.publicacion, recE = await RH.store.ajuste('archivoCompartido', null);
+      const estadoPub = { 'sin-carpeta': ['pill-off', 'Sin carpeta'], ok: ['pill-ok', 'Publicando'], permiso: ['pill-err', 'Permiso pendiente'], error: ['pill-err', 'Error'], 'no-soportado': ['pill-off', 'No disponible'] }[pubE.estado] || ['pill-off', '—'];
+      const cardP = el('section', { class: 'card span-12 db-card' },
+        el('header', { class: 'card-h' }, el('div', { class: 'card-hl' }, el('h3', { class: 'card-t' }, 'Publicar para el equipo (solo archivos, sin links)'), el('p', { class: 'card-s' }, 'Una persona publica; todos los demás reciben los datos al abrir la app')),
+          el('span', { class: 'pill ' + estadoPub[0] }, estadoPub[1])),
+        el('ol', null,
+          el('li', null, 'Pon la carpeta de la app en un lugar compartido (carpeta de red, Teams/OneDrive sincronizada, USB…).'),
+          el('li', null, 'Quien actualiza los datos pulsa «Elegir carpeta de la app» y selecciona esa carpeta una sola vez: desde entonces, cada vez que guarda una temporada la app escribe sola ', el('code', null, 'data/' + RH.dbx.NOMBRE), ' y ', el('code', null, 'data/base-compartida.js'), '.'),
+          el('li', null, 'Los demás solo abren la app desde esa carpeta: al abrirla (y cada minuto mientras esté abierta) cargan los datos nuevos. No hay que enviarles nada.')),
+        pubE.carpeta ? el('p', { class: 'muted small' }, 'Carpeta: ', el('strong', null, pubE.carpeta), pubE.ultima ? ' · última publicación ' + u.fmtFechaHora(pubE.ultima) : '') : null,
+        pubE.error ? el('p', { class: 'error-text' }, pubE.error) : null,
+        pubE.estado === 'permiso' ? el('p', { class: 'muted small' }, 'El navegador pide confirmar el permiso de escritura para seguir publicando: pulsa «Publicar ahora».') : null,
+        el('div', { class: 'card-actions' },
+          RH.dbx.soportaCarpeta ? btn(pubE.carpeta ? 'Cambiar carpeta' : 'Elegir carpeta de la app', async () => { const r = await RH.dbx.vincularCarpeta(); RH.dbx.iniciarPublicacion(); u.toast(r.estado === 'ok' ? 'Publicado: ' + r.n + ' temporada(s) en la carpeta.' : (r.error || 'No se pudo publicar.'), { tipo: r.estado === 'ok' ? 'ok' : 'error' }); render(); }, 'primary') : null,
+          pubE.carpeta ? btn('Publicar ahora', async () => { const r = await RH.dbx.publicarEnCarpeta({ interactivo: true, forzar: true }); u.toast(r.estado === 'ok' ? 'Publicado.' : (r.error || 'No se pudo publicar.'), { tipo: r.estado === 'ok' ? 'ok' : 'error' }); render(); }) : null,
+          pubE.carpeta ? btn('Dejar de publicar', async () => { await RH.dbx.desvincularCarpeta(); render(); }) : null,
+          btn('Descargar archivos de publicación', () => RH.dbx.descargarPublicacion())),
+        el('p', { class: 'muted small' }, 'Recepción en este equipo: ' + (recE && recE.estado === 'ok' ? 'datos del ' + u.fmtFechaHora(recE.version) + ' (' + (recE.temporadas || 0) + ' temporada(s)), revisado ' + u.fmtFechaHora(recE.revisado) : recE && recE.estado === 'ausente' ? 'no se encontró data/base-compartida.js junto a la app' : recE && recE.estado === 'vacio' ? 'todavía no hay datos publicados' : 'sin revisar') + '. ',
+          btn('Buscar actualización ahora', async () => { const r = await RH.dbx.cargarArchivoCompartido(); u.toast(r.estado === 'ok' ? 'Actualizado: ' + (r.nuevos + r.actualizados) + ' temporada(s).' : r.estado === 'sin-cambios' ? 'Ya tienes lo último publicado.' : r.estado === 'vacio' ? 'Todavía no hay datos publicados.' : r.estado === 'ausente' ? 'No se encontró data/base-compartida.js.' : (r.error || 'Error'), { tipo: r.estado === 'error' ? 'error' : 'info' }); render(); })));
+
       // ---------- temporadas
       const tabla = el('table', { class: 'tbl tbl-db' });
       tabla.appendChild(el('thead', null, el('tr', null, ['Dashboard', 'Temporada', 'Lunes semana 1', 'Semanas', 'Tipos', 'Archivo de origen', 'Filas leídas', 'Procesado', 'Origen', ''].map((h, i) => el('th', { class: [3, 4, 6].includes(i) ? 'num' : '' }, h)))));
@@ -167,7 +188,7 @@
         el('p', { class: 'muted small' }, 'Si borras los datos de navegación se pierde la copia local; por eso conviene vincular o exportar el Excel.'),
         persist ? null : el('div', { class: 'card-actions' }, btn('Activar protección', async () => { const ok = await RH.store.persistente(); u.toast(ok ? 'Protección activada.' : 'El navegador no la concedió (se concede automáticamente al instalar la app).', { tipo: ok ? 'ok' : 'warn' }); render(); })));
 
-      raiz.replaceChildren(head, el('div', { class: 'grid' }, cardV, cardX, cardC, cardE, cardT, cardD, cardS));
+      raiz.replaceChildren(head, el('div', { class: 'grid' }, cardV, cardX, cardC, cardE, cardP, cardT, cardD, cardS));
     }
 
     function reportar(r) {

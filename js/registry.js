@@ -15,7 +15,7 @@
   const conCeros = (c, o) => (c.to || 0) + (o.incluirCeros ? (c.ceros || 0) : 0);
 
   RH.registro = {
-    app: { nombre: 'Report Hub', version: '1.7.0' },
+    app: { nombre: 'Report Hub', version: '1.8.0' },
 
     dashboards: [
       {
@@ -95,11 +95,27 @@
         descripcion: 'Procesa el CSV y cuenta, por semana y tipo de asignación, las órdenes Tassels Only y las órdenes totales.'
       },
       {
+        id: 'tassel-only-2',
+        titulo: 'Tassels Only (2 archivos)',
+        archivo: 'reportes/dos-archivos.html',
+        parametros: 'r=tassel-only',
+        dashboard: 'tassel-only',
+        descripcion: 'Dos archivos de órdenes activas (A1 y A2): cuenta cada orden una sola vez por su número y aplica la lógica de Tassels Only.'
+      },
+      {
         id: 'gowns',
         titulo: 'Gowns',
         archivo: 'reportes/gowns.html',
         dashboard: 'gowns',
         descripcion: 'Elige la columna de fecha, la de tipo (GREG, COLL…) y los productos: guarda un reporte por producto, en cantidades (suma) u órdenes (conteo).'
+      },
+      {
+        id: 'homeship-2',
+        titulo: 'Homeship (2 archivos)',
+        archivo: 'reportes/dos-archivos.html',
+        parametros: 'r=homeship',
+        dashboard: 'homeship',
+        descripcion: 'Dos archivos de órdenes activas (A1 y A2): cuenta cada orden una sola vez por su número y aplica la lógica de Homeship menos Tassels Only.'
       },
       {
         id: 'gowns-activas',

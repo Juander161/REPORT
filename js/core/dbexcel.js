@@ -328,6 +328,150 @@
 
   async function olvidarEnlace() { await store.fijar('enlaceBase', null); }
 
+  // ---------------------------------------------------------------- distribución SOLO con archivos (sin links ni servidor)
+  // Quien publica genera data/base-compartida.js (la base en base64 dentro de un archivo .js). Las demás
+  // personas abren la app desde esa misma carpeta (o una copia sincronizada) y la app lo carga sola:
+  // un <script> funciona incluso al abrir index.html directamente desde una carpeta (file://).
+  const RUTA_JS = 'data/base-compartida.js';
+
+  function aBase64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function deBase64(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  /** Contenido a publicar: el libro Excel y el .js equivalente (mismos datos) */
+  async function contenidoPublicacion() {
+    const snaps = (await store.snapshots()).filter(s => !s.demo);
+    const tumbas = await store.ajuste('tombstones', {});
+    const blob = await aLibro(snaps, tumbas);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const version = new Date().toISOString();
+    const js = '/* Report Hub · base compartida (generada ' + version + '). No editar a mano: la genera la app. */\n' +
+      'window.RH_BASE_COMPARTIDA = ' + JSON.stringify({ v: version, n: snaps.length, xlsx: aBase64(bytes) }) + ';\n';
+    return { blob, js, version, n: snaps.length, firma: firmaPublicacion(snaps, tumbas) };
+  }
+  const firmaPublicacion = (snaps, tumbas) => JSON.stringify([snaps.map(s => [s.id, s.updatedAt]).sort(), Object.entries(tumbas || {}).sort()]);
+
+  async function descargarPublicacion() {
+    const c = await contenidoPublicacion();
+    u.descargar(c.blob, NOMBRE);
+    u.descargar(new Blob([c.js], { type: 'text/javascript' }), 'base-compartida.js');
+    u.toast('Descargados ' + NOMBRE + ' y base-compartida.js. Copia ambos a la carpeta data/ de la app compartida (reemplazando los anteriores).', { tipo: 'ok', ms: 9000 });
+  }
+
+  // --- publicación automática en la carpeta de la app (File System Access, Chrome/Edge)
+  const soportaCarpeta = typeof window.showDirectoryPicker === 'function';
+  const pub = { estado: soportaCarpeta ? 'sin-carpeta' : 'no-soportado', carpeta: null, ultima: null, error: null };
+  const avisarPub = () => window.dispatchEvent(new CustomEvent('rh-publicacion', { detail: Object.assign({}, pub) }));
+
+  async function escribir(dir, nombre, contenido) {
+    const fh = await dir.getFileHandle(nombre, { create: true });
+    const w = await fh.createWritable();
+    await w.write(contenido);
+    await w.close();
+  }
+
+  async function vincularCarpeta() {
+    if (!soportaCarpeta) throw new Error('Tu navegador no permite elegir carpetas. Usa «Descargar archivos de publicación» y cópialos a la carpeta compartida.');
+    const dir = await window.showDirectoryPicker({ mode: 'readwrite', id: 'report-hub-app' });
+    await store.fijar('carpetaPublicacion', dir);
+    pub.carpeta = dir.name;
+    return publicarEnCarpeta({ interactivo: true, forzar: true });
+  }
+  async function desvincularCarpeta() {
+    await store.fijar('carpetaPublicacion', null);
+    Object.assign(pub, { estado: soportaCarpeta ? 'sin-carpeta' : 'no-soportado', carpeta: null, error: null });
+    avisarPub();
+  }
+
+  let publicando = false;
+  async function publicarEnCarpeta({ interactivo, forzar } = {}) {
+    if (!soportaCarpeta || publicando) return { estado: pub.estado };
+    const dir = await store.ajuste('carpetaPublicacion', null);
+    if (!dir) { pub.estado = 'sin-carpeta'; avisarPub(); return { estado: 'sin-carpeta' }; }
+    pub.carpeta = dir.name;
+    publicando = true;
+    try {
+      let permiso = await dir.queryPermission({ mode: 'readwrite' });
+      if (permiso !== 'granted' && interactivo) permiso = await dir.requestPermission({ mode: 'readwrite' });
+      if (permiso !== 'granted') { pub.estado = 'permiso'; avisarPub(); return { estado: 'permiso' }; }
+      const c = await contenidoPublicacion();
+      if (!forzar && c.firma === (await store.ajuste('firmaPublicada', null))) { pub.estado = 'ok'; avisarPub(); return { estado: 'sin-cambios' }; }
+      const data = await dir.getDirectoryHandle('data', { create: true });
+      await escribir(data, NOMBRE, c.blob);
+      await escribir(data, 'base-compartida.js', c.js);    // el .js va al final: es el que lee la app de los demás
+      await store.fijar('firmaPublicada', c.firma);
+      pub.estado = 'ok'; pub.ultima = c.version; pub.error = null; avisarPub();
+      return { estado: 'ok', version: c.version, n: c.n };
+    } catch (e) {
+      pub.estado = 'error'; pub.error = e.message; avisarPub();
+      return { estado: 'error', error: e.message };
+    } finally { publicando = false; }
+  }
+
+  let temporizadorPub = null;
+  function programarPublicacion() {
+    clearTimeout(temporizadorPub);
+    temporizadorPub = setTimeout(() => publicarEnCarpeta({ interactivo: false }), 2500);
+  }
+  async function iniciarPublicacion() {
+    if (!soportaCarpeta) { avisarPub(); return; }
+    const dir = await store.ajuste('carpetaPublicacion', null);
+    if (!dir) { avisarPub(); return; }
+    pub.carpeta = dir.name;
+    // cada cambio hecho en esta computadora (no los que llegan de otros) se publica solo
+    store.alCambiar(m => { if (m && m.tipo === 'snapshots' && m.origen !== 'compartida' && m.origen !== 'demo') programarPublicacion(); });
+    publicarEnCarpeta({ interactivo: false });
+  }
+
+  // --- recepción: cada persona carga el archivo compartido al abrir la app y mientras está abierta
+  const rec = { estado: 'sin-revisar', version: null, revisado: null, temporadas: 0 };
+  function leerScriptCompartido() {
+    return new Promise(resolve => {
+      delete window.RH_BASE_COMPARTIDA;
+      const s = document.createElement('script');
+      s.src = RUTA_JS + '?t=' + Date.now();
+      s.onload = () => { const v = window.RH_BASE_COMPARTIDA || null; delete window.RH_BASE_COMPARTIDA; s.remove(); resolve(v); };
+      s.onerror = () => { s.remove(); resolve(undefined); };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function cargarArchivoCompartido() {
+    const dato = await leerScriptCompartido();
+    rec.revisado = new Date().toISOString();
+    if (dato === undefined) { rec.estado = 'ausente'; await store.fijar('archivoCompartido', Object.assign({}, rec)); return { estado: 'ausente' }; }
+    if (!dato || !dato.xlsx) { rec.estado = 'vacio'; await store.fijar('archivoCompartido', Object.assign({}, rec)); return { estado: 'vacio' }; }
+    const vista = await store.ajuste('archivoCompartido', null);
+    if (vista && vista.version === dato.v && vista.estado === 'ok') { Object.assign(rec, vista, { revisado: rec.revisado }); await store.fijar('archivoCompartido', Object.assign({}, rec)); return { estado: 'sin-cambios', version: dato.v }; }
+    try {
+      const base = await leerBase(deBase64(dato.xlsx).buffer);
+      const r = await fusionarBase(base, 'compartida');
+      Object.assign(rec, { estado: 'ok', version: dato.v, temporadas: base.snaps.length });
+      await store.fijar('archivoCompartido', Object.assign({}, rec));
+      return Object.assign({ estado: 'ok', version: dato.v }, r);
+    } catch (e) {
+      Object.assign(rec, { estado: 'error', error: e.message });
+      await store.fijar('archivoCompartido', Object.assign({}, rec));
+      return { estado: 'error', error: e.message };
+    }
+  }
+
+  let sondeoCompartido = null;
+  function iniciarRecepcion(alActualizar) {
+    const revisar = () => cargarArchivoCompartido().then(r => { if (r && r.estado === 'ok' && (r.nuevos || r.actualizados || r.borrados) && alActualizar) alActualizar(r); }).catch(() => {});
+    revisar();
+    if (!sondeoCompartido) sondeoCompartido = setInterval(() => { if (document.visibilityState === 'visible') revisar(); }, 60000);
+    window.addEventListener('focus', revisar);
+  }
+
   // ---------------------------------------------------------------- archivo vinculado
   const soportaVinculo = typeof window.showSaveFilePicker === 'function' && typeof window.showOpenFilePicker === 'function';
   const vinc = { estado: soportaVinculo ? 'sin-vincular' : 'no-soportado', nombre: null, ultimo: null, error: null, ocupado: false };
@@ -438,6 +582,8 @@
   RH.dbx = {
     RUTA_COMPARTIDA, NOMBRE, soportaVinculo,
     aLibro, deLibro, leerBase, resolver, fusionar, fusionarBase, exportar, importar, cargarCompartida, cargarEnlace, olvidarEnlace, normalizarEnlace,
+    RUTA_JS, soportaCarpeta, contenidoPublicacion, descargarPublicacion, vincularCarpeta, desvincularCarpeta, publicarEnCarpeta, iniciarPublicacion, cargarArchivoCompartido, iniciarRecepcion,
+    get publicacion() { return Object.assign({}, pub); }, get recepcion() { return Object.assign({}, rec); },
     vincular, desvincular, sincronizar, iniciarVinculo,
     get vinculo() { return Object.assign({}, vinc); }
   };

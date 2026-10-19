@@ -118,12 +118,13 @@
     const marcosCont = u.$('#frames');
     let f = marcos.get(rep.id);
     if (!f) {
-      const iframe = el('iframe', { src: rep.archivo + '?embed=1', title: rep.titulo, class: 'rep-frame', loading: 'eager' });
+      const consulta = rep.parametros ? rep.parametros + '&' : '';
+      const iframe = el('iframe', { src: rep.archivo + '?' + consulta + 'embed=1', title: rep.titulo, class: 'rep-frame', loading: 'eager' });
       const barra = el('div', { class: 'rep-bar' },
         el('div', null, el('div', { class: 'eyebrow' }, 'Reporte' + (rep.dashboard ? ' · alimenta ' + ((reg.dashboard(rep.dashboard) || {}).titulo || '') : '')), el('strong', null, rep.titulo)),
         el('div', { class: 'rep-bar-r' },
           rep.dashboard ? el('a', { class: 'btn sm', href: '#/dash/' + rep.dashboard }, 'Ver dashboard') : null,
-          el('a', { class: 'btn ghost sm', href: rep.archivo, target: '_blank', rel: 'noopener' }, 'Abrir en pestaña nueva'),
+          el('a', { class: 'btn ghost sm', href: rep.archivo + (rep.parametros ? '?' + rep.parametros : ''), target: '_blank', rel: 'noopener' }, 'Abrir en pestaña nueva'),
           rep.original ? el('a', { class: 'btn ghost sm', href: rep.original, target: '_blank', rel: 'noopener', title: 'Archivo original sin cambios' }, 'Versión original') : null));
       const wrap = el('div', { class: 'rep-wrap' }, barra, iframe);
       marcosCont.appendChild(wrap);
@@ -312,6 +313,8 @@
     RH.store.ajuste('enlaceBase', null).then(e => e && e.url && navigator.onLine !== false && RH.dbx.cargarEnlace(e.url).then(r => {
       if (r && r.estado === 'ok' && (r.nuevos || r.actualizados)) u.toast('Excel del enlace: ' + (r.nuevos + r.actualizados) + ' temporada(s) actualizadas.', { tipo: 'ok' });
     })).catch(() => {});
+    RH.dbx.iniciarRecepcion(r => u.toast('Datos actualizados desde el archivo compartido: ' + (r.nuevos + r.actualizados) + ' temporada(s).', { tipo: 'ok' }));
+    RH.dbx.iniciarPublicacion();
     RH.dbx.iniciarVinculo();
     let ultimoFoco = Date.now();
     window.addEventListener('focus', () => {
