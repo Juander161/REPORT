@@ -12,6 +12,7 @@
   const ICONOS = {
     panorama: '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
     'tassel-only': '<path d="M12 3v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M9 10h6l-1 10h-4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M11 13v5M13 13v5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>',
+    'gowns-activas': '<path d="M9 3l3 3 3-3 4 3-2 4-2-1v12H9V9L7 10 5 6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M3 21h3M18 21h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
     gowns: '<path d="M9 3l3 3 3-3 4 3-2 4-2-1v12H9V9L7 10 5 6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
     homeship: '<path d="M3 11l9-7 9 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10v10h14V10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 20v-5h4v5" fill="none" stroke="currentColor" stroke-width="1.7"/>',
     reporte: '<path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12h6M9 16h6M9 8h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',

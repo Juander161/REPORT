@@ -96,6 +96,16 @@
       </ol>
     </section>
 
+    <section class="card span-6 guide" id="gowns-activas">
+      <h3 class="card-t">GOWNS ACTIVAS: dos archivos, órdenes únicas</h3>
+      <ol>
+        <li>En <strong>Gowns activas (2 archivos)</strong> carga <strong>A1</strong> y <strong>A2</strong> y elige en cada uno la columna del <strong>número de orden</strong>, la de <strong>fecha</strong> y la de <strong>tipo</strong> (pueden llamarse distinto).</li>
+        <li>Cada orden se cuenta <strong>una sola vez</strong> aunque esté en los dos archivos (o repetida en uno). Si hay repetidas, eliges de cuál archivo se toman los datos.</li>
+        <li>Pulsa <strong>Detectar tipos</strong>: aparecen todos los nombres de tipo de los archivos y eliges a qué grupo (GREG, COLL…) corresponde cada uno, o «Ignorar».</li>
+        <li>En <strong>Productos</strong> indica la columna de cada producto en A1 y en A2, y elige cantidades y/u órdenes. Se guarda un reporte por producto y medida (<code>producto_temporada_sum</code> / <code>_count</code>) en el dashboard <strong>GOWNS ACTIVAS</strong>.</li>
+      </ol>
+    </section>
+
     <section class="card span-6 guide" id="privacidad">
       <h3 class="card-t">8 · Privacidad y seguridad</h3>
       <ul>

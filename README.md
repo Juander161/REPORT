@@ -239,6 +239,20 @@ proyección el N/A se incluye como semana 0 en los totales y comparativos (inter
 N/A»). La temporada se sugiere por el año en que termina (empieza 29/6/2026 → «2027»).
 Estos son los únicos cambios de presentación respecto a los HTML originales; los conteos no cambian.
 
+## GOWNS ACTIVAS (dos archivos)
+
+`reportes/gowns-activas.html` toma dos archivos de órdenes activas (A1 y A2). Primero identifica
+las **órdenes únicas** por su número (se normaliza: `100001`, `100001.0` y `100,001` son la misma;
+una orden en ambos archivos, o repetida en uno, cuenta una vez, y tú eliges de qué archivo se
+toman sus datos). Después hace lo mismo que GOWNS: por producto, cantidades (suma) y/u órdenes
+(órdenes únicas con cantidad > 0) por semana y tipo, con las 52 semanas y el N/A antes de la
+semana 1. Todo es seleccionable por archivo: columna de número de orden, de fecha y de tipo,
+formato de fecha, y la columna de cada producto (que puede llamarse distinto en A1 y A2). Los
+nombres de tipo se detectan y se agrupan en GREG, COLL u otros grupos que definas (o se
+ignoran). Se guarda un reporte por producto y medida en el dashboard **GOWNS ACTIVAS**.
+Comprobado contra un cálculo independiente (5 002 órdenes únicas, 1 200 repetidas entre
+archivos, identificadores en tres formatos, tipos con nombres variados).
+
 ## Proyección de temporada
 
 La vista **Proyección de temporada** estima el cierre de la temporada actual con las

@@ -134,3 +134,11 @@ tr.total td { font-weight: 700; background: var(--surface-3) !important; border-
 .table-wrap tr.na td { background: var(--surface-3, #eef2f7); font-style: italic; }
 .table-wrap tr.tot td { font-weight: 700; border-top: 2px solid var(--border-2, #c3c8d1); }
 .checks.anchos { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-height: none; overflow: visible; }
+.dos-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 18px; margin-top: 8px; }
+.arch { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.arch-t { margin: 0 0 8px; font-size: 14px; }
+.tbl-cfg { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tbl-cfg th, .tbl-cfg td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.tbl-cfg td.num { text-align: right; }
+.tbl-cfg input:not([type=checkbox]), .tbl-cfg select { width: 100%; min-width: 120px; }
+.tipos-wrap { max-height: 320px; overflow: auto; margin-top: 10px; }

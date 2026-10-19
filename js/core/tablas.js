@@ -155,5 +155,5 @@
     };
   }
 
-  RH.tablas = { SEMANAS_TEMPORADA, 'tassel-only': tasselOnly, homeship, gowns, mapa };
+  RH.tablas = { SEMANAS_TEMPORADA, 'tassel-only': tasselOnly, homeship, gowns, 'gowns-activas': gowns, mapa };
 })(window.RH = window.RH || {});

@@ -911,6 +911,8 @@
             n + ' semana(s) fuera de rango en ' + s.season + (v ? ' (' + G.fmtValor(v, vm.fmtM) + ')' : ''))),
         vm.prev && vm.prev.week1 && vm.prev.week1 === vm.cur.week1 ? el('span', { class: 'chip chip-warn', title: 'Las dos temporadas tienen el mismo lunes de semana 1: probablemente son la misma temporada guardada con dos etiquetas. Borra una en «Base de datos».' },
           'Misma temporada: ' + vm.cur.season + ' y ' + vm.prev.season + ' tienen el mismo lunes') : null,
+        !vm.conNA && (M.tieneNA(vm.cur) || M.tieneNA(vm.prev)) ? el('span', { class: 'chip chip-warn', title: 'N/A = lo anterior al lunes de la semana 1 o sin fecha. Se suma como «semana 0» cuando el periodo empieza en la semana 1 y el interruptor «Incluir N/A» está encendido.' },
+          'N/A no incluido: ' + (e.incluirNA === false ? 'interruptor apagado' : 'el periodo no empieza en la semana 1')) : null,
         btnReset,
         vm.parcial ? el('span', { class: 'chip chip-warn', title: 'La última semana con datos todavía no termina' }, '* S' + vm.parcial.semana + ' parcial · datos al ' + u.fmtFecha(vm.parcial.corte)) : null].filter(Boolean));
     }

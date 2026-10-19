@@ -15,7 +15,7 @@
   const conCeros = (c, o) => (c.to || 0) + (o.incluirCeros ? (c.ceros || 0) : 0);
 
   RH.registro = {
-    app: { nombre: 'Report Hub', version: '1.5.0' },
+    app: { nombre: 'Report Hub', version: '1.6.0' },
 
     dashboards: [
       {
@@ -45,6 +45,19 @@
         estado: 'activo',
         variantes: true,   // cada reporte guardado es un producto + medida (cantidades u órdenes)
         descripcion: 'Cantidades u órdenes por producto, por semana y por tipo (GREG, COLL…). Elige el producto y la medida en el filtro.',
+        campos: { v: 'Valor' },
+        opciones: [],
+        metricas: [{ id: 'valor', etiqueta: 'Cantidad', unidad: 'unidades', num: c => c.v || 0 }],
+        principal: 'valor'
+      },
+      {
+        id: 'gowns-activas',
+        titulo: 'GOWNS ACTIVAS',
+        dataset: 'gowns-activas',
+        reporte: 'gowns-activas',
+        estado: 'activo',
+        variantes: true,
+        descripcion: 'Órdenes activas de dos archivos (A1 y A2) sin repetir las que están en ambos, en cantidades u órdenes por producto, semana y tipo (GREG, COLL…).',
         campos: { v: 'Valor' },
         opciones: [],
         metricas: [{ id: 'valor', etiqueta: 'Cantidad', unidad: 'unidades', num: c => c.v || 0 }],
@@ -87,6 +100,13 @@
         archivo: 'reportes/gowns.html',
         dashboard: 'gowns',
         descripcion: 'Elige la columna de fecha, la de tipo (GREG, COLL…) y los productos: guarda un reporte por producto, en cantidades (suma) u órdenes (conteo).'
+      },
+      {
+        id: 'gowns-activas',
+        titulo: 'Gowns activas (2 archivos)',
+        archivo: 'reportes/gowns-activas.html',
+        dashboard: 'gowns-activas',
+        descripcion: 'Toma dos archivos de órdenes activas (A1 y A2), cuenta cada orden una sola vez por su número y calcula cantidades u órdenes por producto, semana y tipo.'
       },
       {
         id: 'homeship',
