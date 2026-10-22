@@ -45,7 +45,7 @@
     <h2 class="step-h"><span class="step-n">3</span> Columnas de cantidad (QTY) y su función</h2>
     <p class="muted"><strong>Objetivo</strong>: se suman y la orden cuenta si es &gt; 0 · <strong>Debe ser 0</strong>: si alguna tiene cantidad, la orden ya no es Tassels Only · <strong>Ignorar</strong>. Elige la columna que corresponde en cada archivo (puede llamarse distinto).</p>
     <div class="table-wrap"><table class="tbl-cfg" id="qtyTabla"></table></div>
-    <p class="aviso" id="qtyVacio" hidden>⚠ No encontré columnas cuyo nombre indique cantidad (QTY, QUANTITY, CANT, UNITS…). Revisa que la «Fila del encabezado» sea la correcta o agrega las columnas a mano.</p>
+    <p class="aviso" id="qtyVacio" hidden>⚠ No encontré columnas con números (cantidades). Revisa que la «Fila del encabezado» sea la correcta o agrega las columnas a mano.</p>
     <div class="actions" id="qtyAdd" hidden><select id="qtyNueva"></select><button id="qtyAgregar" class="btn sm" type="button">+ Agregar columna</button></div>
   </section>
 
@@ -96,15 +96,15 @@ const HS = R === 'homeship';
 const DATASET = R;
 const CAMPOS = HS ? ['hs', 'to', 'ceros'] : ['to', 'ceros', 'filas'];
 const NOMBRE_ARCH = { 1: 'A1', 2: 'A2' };
-const OBJETIVO_DEFECTO = ['TASSEL', 'MASCOTMEDAL'];
+const OBJETIVO_DEFECTO = ['TASSEL', 'MASCOTMEDAL'];   // ya sin la S final (norm)
 const ROLES = { obj: 'Objetivo (cuenta)', cero: 'Debe ser 0', ign: 'Ignorar' };
 
-const enc = { 1: [], 2: [] };
+const enc = { 1: [], 2: [] }, numericas = { 1: new Set(), 2: new Set() };
 let qtys = [];                    // [{nombre, rol, c1, c2}]
 let auditoria = null, resultado = null, snapshotBase = null;
 let ultimo = null, procesando = false, cambioDurante = false, tsv = '';
 
-const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '');
+const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '').replace(/S$/, '');
 const rolPorDefecto = nombre => OBJETIVO_DEFECTO.includes(norm(nombre)) ? 'obj' : 'cero';
 function normId(v) {
   const t = String(v == null ? '' : v).trim().replace(/,/g, '');
@@ -146,6 +146,7 @@ function armarArchivos() {
   [1, 2].forEach(n => {
     RH.puente.zonaArchivo($('zona' + n), $('archivo' + n), $('archivoInfo' + n));
     $('archivo' + n).addEventListener('change', () => alElegirArchivo(n));
+    ['colId', 'colFecha', 'colTipo', 'colFiltro'].forEach(k => { const el = $(k + n); if (el) el.addEventListener('change', sincronizarQty); });
     $('hoja' + n).addEventListener('change', () => alElegirArchivo(n));
     $('filaEnc' + n).addEventListener('change', () => alElegirArchivo(n));
   });
@@ -161,10 +162,11 @@ function llenar(sel, cols, preferidas) {
 async function alElegirArchivo(n) {
   const f = $('archivo' + n).files[0];
   $('hojaWrap' + n).hidden = true;
-  if (!f) { enc[n] = []; sincronizarQty(); return; }
+  if (!f) { enc[n] = []; numericas[n] = new Set(); sincronizarQty(); return; }
   try {
     const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
     enc[n] = cols;
+    numericas[n] = await RH.puente.columnasNumericas(f, $('hoja' + n), $('filaEnc' + n));
     llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
     llenar($('colFecha' + n), cols, [/^IMPORTED$/, /FECHA|DATE|IMPORTED/]);
     llenar($('colTipo' + n), cols, [/^ASSIGNMENT TYPE$/, /TYPE|TIPO/]);
@@ -177,10 +179,15 @@ async function alElegirArchivo(n) {
 }
 
 // ---------- columnas QTY: una fila por columna lógica con su columna en cada archivo
+// columnas que pueden ser cantidades: las de contenido numérico (el nombre no importa), sin las de orden/fecha/tipo/filtro
+function candidatas(n) {
+  const usadas = new Set(['colId', 'colFecha', 'colTipo', 'colFiltro'].map(k => $(k + n) && $(k + n).value).filter(Boolean));
+  return enc[n].filter(c => c && !usadas.has(c) && (numericas[n].has(c) || RH.csv.esCantidad(c)));
+}
 function sincronizarQty() {
   const previos = new Map(qtys.map(q => [norm(q.nombre), q]));
   const lista = [];
-  [1, 2].forEach(n => enc[n].filter(c => RH.csv.esCantidad(c)).forEach(c => { if (!lista.some(x => norm(x) === norm(c))) lista.push(c); }));
+  [1, 2].forEach(n => candidatas(n).forEach(c => { if (!lista.some(x => norm(x) === norm(c))) lista.push(c); }));
   qtys.filter(q => q.manual).forEach(q => { if (!lista.some(x => norm(x) === norm(q.nombre))) lista.push(q.nombre); });
   const buscar = (n, nombre) => enc[n].find(c => norm(c) === norm(nombre)) || '';
   qtys = lista.map(nm => {
@@ -197,7 +204,7 @@ function pintarQty() {
   const hayArchivo = enc[1].length || enc[2].length;
   $('qtyVacio').hidden = !hayArchivo || qtys.length > 0;
   $('qtyAdd').hidden = !hayArchivo;
-  if (!qtys.length) { t.innerHTML = '<tr><td class="muted">' + (hayArchivo ? 'No hay columnas con nombre de cantidad; agrégalas abajo.' : 'Elige los archivos para ver sus columnas de cantidad.') + '</td></tr>'; return; }
+  if (!qtys.length) { t.innerHTML = '<tr><td class="muted">' + (hayArchivo ? 'No encontré columnas con números; agrégalas abajo.' : 'Elige los archivos para ver sus columnas con números.') + '</td></tr>'; return; }
   const opciones = n => '<option value="">— no está en ' + NOMBRE_ARCH[n] + ' —</option>' + enc[n].map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
   t.innerHTML = '<tr><th>Columna</th><th>Función</th><th>Columna en A1</th><th>Columna en A2</th></tr>' +
     qtys.map((q, i) => '<tr><td>' + esc(q.nombre) + '</td>' +

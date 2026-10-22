@@ -274,6 +274,21 @@
     return cols.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
   }
 
+  /** Columnas cuyo contenido (primeras filas de datos) es numérico: candidatas a cantidad, sin depender del nombre */
+  async function columnasNumericas(file, selHoja, inpFila) {
+    const hoja = esExcel(file) ? selHoja.value : null;
+    const fila = Math.max(1, Math.floor(+inpFila.value) || 1) - 1;
+    const filas = await RH.csv.muestra(file, { hoja, max: fila + 301 });
+    const cab = (filas[fila] || []).map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
+    const ok = new Set();
+    cab.forEach((nombre, i) => {
+      let n = 0, num = 0;
+      filas.slice(fila + 1).forEach(r => { const t = String(r[i] == null ? '' : r[i]).trim().replace(/,/g, ''); if (t === '') return; n++; if (isFinite(Number(t))) num++; });
+      if (n && num / n >= 0.9) ok.add(nombre);
+    });
+    return ok;
+  }
+
   /** Si la configuración cambia después de procesar, el resultado ya no corresponde: se invalida */
   function invalidarAlCambiar(nodos, cb) {
     nodos.filter(Boolean).forEach(n => {
@@ -315,5 +330,5 @@
     return avisos;
   }
 
-  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, cargarEncabezados, invalidarAlCambiar, avisosResultado, fueraDeRango, ultimaSemana, avisoSemanas, MAX_SEMANA };
+  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, cargarEncabezados, columnasNumericas, invalidarAlCambiar, avisosResultado, fueraDeRango, ultimaSemana, avisoSemanas, MAX_SEMANA };
 })(window.RH = window.RH || {});
