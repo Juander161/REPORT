@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comparativo SY · Shipped + Open · Report Hub</title>
+<link rel="icon" href="../icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="reporte.css">
+<script>try { var t = JSON.parse(localStorage.getItem('rh-tema') || '"auto"'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+<style>
+  .sy-wrap { max-height: none; }
+  .sy-wrap table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+  .sy-wrap td, .sy-wrap th { white-space: nowrap; padding: 4px 8px; border-bottom: 1px solid var(--border, #e5e7eb); text-align: right; }
+  .sy-wrap td:nth-child(1), .sy-wrap td:nth-child(2) { text-align: left; position: sticky; background: var(--surface, #fff); z-index: 1; }
+  .sy-wrap td:nth-child(1) { left: 0; min-width: 150px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  .sy-wrap td:nth-child(2) { left: 150px; min-width: 190px; border-right: 1px solid var(--border-2, #c3c8d1); }
+  .sy-wrap tr.hd td { background: #0f2a4a; color: #fff; font-weight: 700; }
+  .sy-wrap tr.hd td:nth-child(1), .sy-wrap tr.hd td:nth-child(2) { background: #0f2a4a; }
+  .sy-wrap tr.sub td { font-weight: 700; background: var(--surface-3, #eef2f7); }
+  .sy-wrap tr.sub td:nth-child(1), .sy-wrap tr.sub td:nth-child(2) { background: var(--surface-3, #eef2f7); }
+  .sy-wrap td.neg { color: #b42318; }
+  .sy-wrap td.pos { color: #067647; }
+  .sy-chart { width: 100%; height: auto; margin-top: 14px; }
+  .sy-chart text { fill: currentColor; font-size: 11px; }
+  .sy-leyenda { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; margin-top: 6px; }
+  .sy-leyenda i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="rp">
+  <header class="rp-head">
+    <div>
+      <div class="eyebrow">Reporte · comparativo por temporada</div>
+      <h1>Comparativo SY · Shipped + Open</h1>
+      <p>Réplica del reporte «Imported Date comparison»: dos archivos (<strong>Shipments Report</strong> = enviadas y <strong>Open Orders Report</strong> = abiertas), órdenes únicas por número, conteo semanal por College / Scholastic, la temporada anterior tomada de lo ya guardado, totales, acumulados, diferencias contra el año anterior y la gráfica. Se puede copiar a Excel o descargar como .xlsx con fórmulas y gráfica nativa.</p>
+    </div>
+    <a class="btn ghost solo-suelto" href="../index.html">← Ir al panel</a>
+  </header>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">1</span> Archivos y columnas</h2>
+    <div class="dos-col" id="cfgArchivos"></div>
+    <label class="check"><input type="checkbox" id="soloEnviada" checked> Si una orden aparece en los dos archivos, contarla solo como enviada (Shipped)</label>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">2</span> Semanas, tipos y temporada anterior</h2>
+    <div class="form-grid">
+      <label class="fld">Lunes de la Semana 1 (temporada nueva) <input type="date" id="inicio" value="2026-06-29"><span class="hint" id="inicioInfo"></span></label>
+      <label class="fld">Temporada (etiqueta) <input id="temporada" placeholder="p. ej. 2027"></label>
+      <label class="fld">Título del reporte <input id="titulo" value="Homeship Orders"></label>
+      <label class="fld">Filtrar filas que contengan <input id="palabra" value="HOMESHIP"><span class="hint">Se aplica a la columna «filtro» de cada archivo; déjalo vacío para no filtrar.</span></label>
+      <label class="fld">College = tipo que contenga <input id="gCollege" value="COLL, C"><span class="hint">Varios separados por coma. Una sola letra (C) significa «empieza con esa letra». Todo lo demás es Scholastic (GREG).</span></label>
+      <label class="fld">Temporada anterior (ya guardada) <select id="previa"></select></label>
+    </div>
+    <div class="inline">Temporadas ya guardadas: <span class="chips" id="temporadas"></span></div>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">3</span> Procesar</h2>
+    <div class="actions">
+      <button id="go" class="btn primary lg" type="button">Procesar</button>
+      <button id="copiar" class="btn" type="button" disabled>Copiar tabla (para pegar en Excel)</button>
+      <button id="excel" class="btn" type="button" disabled>Descargar Excel (.xlsx)</button>
+    </div>
+    <div class="progress" id="progreso" hidden><div></div></div>
+    <div id="estado"></div>
+    <div id="aviso" class="aviso" hidden></div>
+    <div id="usado" class="usado"></div>
+  </section>
+
+  <section class="card save" id="panelGuardar" hidden></section>
+
+  <section class="card" id="resultados" hidden>
+    <div id="salida" class="table-wrap sy-wrap"></div>
+    <div id="grafica"></div>
+  </section>
+
+  <section class="card" id="auditoriaCard" hidden>
+    <h2 class="step-h"><span class="step-n">✓</span> Auditoría</h2>
+    <div class="table-wrap"><table class="tbl-cfg" id="audConteos"></table></div>
+  </section>
+</div>
+
+<script src="../js/core/util.js"></script>
+<script src="../js/core/store.js"></script>
+<script src="../js/core/zip.js"></script>
+<script src="../js/core/xlsx.js"></script>
+<script src="../js/core/excel-filas.js"></script>
+<script src="../js/core/csv.js"></script>
+<script src="../js/registry.js"></script>
+<script src="../js/puente.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = RH.util.esc;
+const DATASET = 'comparativo-sy';
+const CAMPOS = ['env', 'abi'];
+const ARCH = { 1: { nombre: 'Shipped', informe: 'Shipments Report', campo: 'env' }, 2: { nombre: 'Open', informe: 'Open Orders Report', campo: 'abi' } };
+const NSEM = 52;
+const enc = { 1: [], 2: [] };
+let snapshotBase = null, ultimo = null, auditoria = null, procesando = false, cambioDurante = false;
+let matriz = null, tsv = '', previas = [];
+
+const norm = s => String(s == null ? '' : s).trim().replace(/,/g, '');
+function normId(v) { const t = norm(v); if (t === '') return ''; const n = Number(t); return isFinite(n) ? String(n) : t.toUpperCase(); }
+const lista = txt => String(txt).split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
+const syEtiqueta = temp => "SY'" + String(temp).slice(-2);
+
+// ---------- tarjetas de archivo
+function armarArchivos() {
+  $('cfgArchivos').innerHTML = [1, 2].map(n => `
+    <div class="arch">
+      <h3 class="arch-t">${ARCH[n].nombre} · ${ARCH[n].informe}</h3>
+      <label class="drop" id="zona${n}">
+        <span class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span><strong>CSV o Excel (.xlsx) de ${ARCH[n].informe}</strong><small id="archivoInfo${n}">Se procesa en tu computadora.</small></span>
+        <input type="file" id="archivo${n}" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </label>
+      <label class="fld fld-hoja" id="hojaWrap${n}" hidden>Hoja del libro <select id="hoja${n}"></select></label>
+      <label class="fld fld-hoja">Fila del encabezado <input type="number" min="1" id="filaEnc${n}" value="1" style="width:90px"><span class="hint">Se detecta sola; cámbiala si el reporte trae títulos arriba.</span></label>
+      <div class="form-grid">
+        <label class="fld">Columna del número de orden <select id="colId${n}"></select></label>
+        <label class="fld">Columna de fecha (Imported Date) <select id="colFecha${n}"></select></label>
+        <label class="fld">Columna de tipo <select id="colTipo${n}"></select></label>
+        <label class="fld">Columna del filtro <select id="colFiltro${n}"></select></label>
+        <label class="fld">Columna de cantidad <select id="colQty${n}"></select><span class="hint">«(cada orden = 1)» cuenta órdenes.</span></label>
+        <label class="fld">Formato de fecha (si es texto)
+          <select id="fmt${n}"><option value="MDY">Mes/Día/Año</option><option value="DMY">Día/Mes/Año</option></select></label>
+      </div>
+    </div>`).join('');
+  [1, 2].forEach(n => {
+    RH.puente.zonaArchivo($('zona' + n), $('archivo' + n), $('archivoInfo' + n));
+    $('archivo' + n).addEventListener('change', () => alElegirArchivo(n));
+    $('hoja' + n).addEventListener('change', () => alElegirArchivo(n));
+    $('filaEnc' + n).addEventListener('change', () => alElegirArchivo(n));
+  });
+}
+
+function llenar(sel, cols, preferidas, vacio) {
+  const previa = sel.value;
+  sel.replaceChildren(...[...(vacio ? [new Option(vacio, '')] : []), ...cols.map(c => new Option(c || '(sin nombre)', c))]);
+  const pref = preferidas.map(re => cols.find(c => re.test(c))).find(Boolean);
+  sel.value = cols.includes(previa) ? previa : (pref || (vacio ? '' : cols[0]) || '');
+}
+
+async function alElegirArchivo(n) {
+  const f = $('archivo' + n).files[0];
+  $('hojaWrap' + n).hidden = true;
+  if (!f) { enc[n] = []; return; }
+  try {
+    const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
+    enc[n] = cols;
+    llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
+    llenar($('colFecha' + n), cols, [/^IMPORTED( DATE)?$/, /IMPORTED/, /FECHA|DATE/]);
+    llenar($('colTipo' + n), cols, [/^ASSIGNMENT TYPE$/, /TYPE|TIPO/]);
+    llenar($('colFiltro' + n), cols, [/^SERVICE ORDER TYPE$/, /SERVICE|SERVICIO/], '(sin filtro)');
+    llenar($('colQty' + n), cols.filter(c => RH.csv.esCantidad(c)), [], '(cada orden = 1)');
+    $('estado').textContent = '';
+  } catch (e) {
+    $('estado').textContent = 'No pude leer el encabezado de ' + ARCH[n].nombre + ': ' + e.message;
+  }
+}
+
+// ---------- temporada anterior
+const claveSel = s => s.id;
+async function cargarPrevias() {
+  let todas = [];
+  try { todas = (await RH.store.snapshots(DATASET)).filter(x => !x.demo); } catch (e) { /* sin base */ }
+  const inicio = $('inicio').value;
+  previas = todas.filter(x => x.week1 !== inicio).sort((a, b) => (a.week1 || '').localeCompare(b.week1 || ''));
+  const prev = $('previa').value;
+  $('previa').replaceChildren(new Option('(ninguna: ceros)', ''), ...previas.map(s => new Option(s.season + ' · semana 1 = ' + RH.util.fmtFecha(s.week1), claveSel(s))));
+  const antes = previas.filter(x => (x.week1 || '') < inicio);
+  $('previa').value = previas.some(s => s.id === prev) ? prev : (antes.length ? antes[antes.length - 1].id : '');
+  $('temporadas').textContent = todas.length ? todas.map(s => s.season).join(', ') : 'ninguna';
+}
+
+// ---------- procesar
+async function procesar() {
+  procesando = true; cambioDurante = false;
+  try { await procesarArchivos(); } finally { procesando = false; }
+}
+
+async function procesarArchivos() {
+  const archivos = [1, 2].map(n => ({
+    n, file: $('archivo' + n).files[0], id: $('colId' + n).value, fecha: $('colFecha' + n).value, tipo: $('colTipo' + n).value,
+    filtro: $('colFiltro' + n).value, qty: $('colQty' + n).value, fmt: $('fmt' + n).value,
+    filaEnc: Math.max(1, Math.floor(+$('filaEnc' + n).value) || 1) - 1, hoja: null
+  }));
+  if (archivos.some(a => !a.file)) { $('estado').textContent = 'Elige los dos archivos (Shipped y Open).'; return; }
+  const inicio = Date.parse($('inicio').value), inicioIso = $('inicio').value;
+  if (!(inicio > 0)) { $('estado').textContent = 'Escribe el lunes de la semana 1.'; return; }
+  const PALABRA = $('palabra').value.trim().toUpperCase();
+  const claves = lista($('gCollege').value);
+  if (!claves.length) { $('estado').textContent = 'Escribe los valores de tipo que cuentan como College.'; return; }
+  const esCollege = t => claves.some(c => c.length === 1 ? t.startsWith(c) : t.includes(c));
+  archivos.forEach(a => { a.hoja = RH.puente.esExcel(a.file) ? $('hoja' + a.n).value : null; });
+
+  ultimo = null; snapshotBase = null; matriz = null;
+  $('go').disabled = true; $('progreso').hidden = false; $('aviso').hidden = true; $('usado').textContent = '';
+  $('resultados').hidden = true; $('auditoriaCard').hidden = true; $('copiar').disabled = true; $('excel').disabled = true; guardarUI.ocultar();
+
+  const propios = { 1: new Set(), 2: new Set() }, vistos = propios, datos = new Map();
+  const est = { 1: { filas: 0, sinId: 0, dup: 0, enAmbos: 0, fuera: 0, otros: 0, unicas: 0, contadas: 0, na: 0 }, 2: { filas: 0, sinId: 0, dup: 0, enAmbos: 0, fuera: 0, otros: 0, unicas: 0, contadas: 0, na: 0 } };
+  const sumas = { 1: 0, 2: 0 };
+  let antes = 0, malas = 0, avisoExcel = null;
+  const soloEnviada = $('soloEnviada').checked;
+  // Shipped se lee primero (manda cuando una orden está en los dos archivos)
+  try {
+    for (const n of [1, 2]) {
+      const a = archivos[n - 1], e = est[n], ix = {};
+      const r = await RH.csv.leer(a.file, {
+        hoja: a.hoja, columnasFecha: [a.fecha], filaEncabezado: a.filaEnc,
+        alEncabezado(h) {
+          ix.id = h.indexOf(a.id); ix.fecha = h.indexOf(a.fecha); ix.tipo = h.indexOf(a.tipo);
+          ix.filtro = a.filtro ? h.indexOf(a.filtro) : -1; ix.qty = a.qty ? h.indexOf(a.qty) : -1;
+          if (ix.id < 0 || ix.fecha < 0 || ix.tipo < 0 || (a.filtro && ix.filtro < 0) || (a.qty && ix.qty < 0)) throw new Error('En ' + ARCH[n].nombre + ' no encontré alguna de las columnas elegidas.');
+        },
+        alFila(row) {
+          e.filas++;
+          const id = normId(row[ix.id]);
+          if (id === '') { e.sinId++; return; }
+          if (propios[n].has(id)) { e.dup++; return; }          // repetida dentro del mismo archivo: cuenta una vez
+          propios[n].add(id);
+          if (n === 2 && propios[1].has(id)) { e.enAmbos++; if (soloEnviada) return; }
+          e.unicas++;
+          if (PALABRA && ix.filtro >= 0 && !String(row[ix.filtro] || '').toUpperCase().includes(PALABRA)) { e.fuera++; return; }
+          const t = String(row[ix.tipo] || '').trim().toUpperCase();
+          const g = { id: esCollege(t) ? 'COLLEGE' : 'SCHOLASTIC' };      // Scholastic (GREG) es todo lo demás
+          const { semana, motivo } = RH.csv.semana(row[ix.fecha], inicio, a.fmt);
+          const valor = ix.qty >= 0 ? RH.csv.num(row[ix.qty]) : 1;
+          e.contadas++;
+          if (semana === 'N/A') { e.na++; if (motivo === 'sin-fecha') malas++; else antes++; }
+          if (!datos.has(semana)) datos.set(semana, new Map());
+          const mt = datos.get(semana);
+          if (!mt.has(g.id)) mt.set(g.id, { env: 0, abi: 0 });
+          mt.get(g.id)[ARCH[n].campo] += valor; sumas[n] += valor;
+        },
+        alProgreso(leidos, total) {
+          $('estado').textContent = 'Leyendo ' + ARCH[n].nombre + '… ' + Math.round(total ? leidos / total * 100 : 100) + ' %';
+          $('progreso').firstElementChild.style.width = (total ? Math.min(100, leidos / total * 100) : 100).toFixed(1) + '%';
+        }
+      });
+      if (r.aviso) avisoExcel = (avisoExcel ? avisoExcel + ' ' : '') + ARCH[n].nombre + ': ' + r.aviso;
+    }
+  } catch (err) {
+    $('estado').textContent = 'Error: ' + err.message;
+    $('go').disabled = false; $('progreso').hidden = true;
+    return;
+  }
+
+  const cfgArch = archivos.map(a => ({ archivo: RH.puente.metaArchivo(a.file, a.hoja), colId: a.id, colFecha: a.fecha, colTipo: a.tipo, colFiltro: a.filtro || undefined, colQty: a.qty || undefined, fmt: a.fmt }));
+  const snap = Object.assign(RH.puente.desdeMapa(datos, CAMPOS), {
+    dataset: DATASET, week1: inicioIso,
+    meta: {
+      reporte: DATASET, archivo: { nombre: archivos.map(a => a.file.name).join(' + '), tam: archivos.reduce((t, a) => t + a.file.size, 0), modificado: Math.max(...archivos.map(a => a.file.lastModified)), tipo: 'excel/csv', hoja: null },
+      archivos: cfgArch, filas: est[1].contadas + est[2].contadas, fechasMalas: malas, antesDeInicio: antes,
+      config: { titulo: $('titulo').value.trim(), palabra: PALABRA, college: claves, soloEnviada }
+    }
+  });
+  snapshotBase = snap;
+  auditoria = { est, vistos, sumas, archivos };
+  $('estado').textContent = 'Listo. Órdenes únicas: Shipped ' + est[1].unicas.toLocaleString() + ' · Open ' + est[2].unicas.toLocaleString() +
+    ' | Contadas (College + Scholastic): Shipped ' + est[1].contadas.toLocaleString() + ' · Open ' + est[2].contadas.toLocaleString() +
+    ' | En N/A: ' + (antes + malas).toLocaleString();
+  $('go').disabled = false; $('progreso').firstElementChild.style.width = '100%';
+  await cargarPrevias();
+  pintar(); pintarAuditoria();
+  $('usado').textContent = 'Calculado con: Lunes de la Semana 1 = ' + inicioIso + ' · ' + archivos.map(a => ARCH[a.n].nombre + ': ' + a.file.name + ' (orden ' + a.id + ', fecha ' + a.fecha + ', tipo ' + a.tipo + (a.filtro ? ', filtro ' + a.filtro : '') + (a.qty ? ', cantidad ' + a.qty : '') + ')').join(' · ') + (PALABRA ? ' · Filtro: ' + PALABRA : '');
+  if (cambioDurante) { $('aviso').hidden = false; $('aviso').textContent = 'La configuración cambió mientras se procesaba: pulsa «Procesar» otra vez antes de guardar.'; return; }
+  ultimo = true;
+  const semanasNum = [...datos.keys()].filter(k => k !== 'N/A');
+  const avisos = RH.puente.avisosResultado({ base: snap.meta.filas, antesDeInicio: antes, fechasMalas: malas, maxSemana: Math.max(0, ...semanasNum), maxEnRango: RH.puente.ultimaSemana(semanasNum), fuera: RH.puente.fueraDeRango(datos, 'env') });
+  if (avisoExcel) avisos.unshift(avisoExcel);
+  [1, 2].forEach(n => { if (est[n].sinId) avisos.push(est[n].sinId.toLocaleString() + ' fila(s) de ' + ARCH[n].nombre + ' sin número de orden quedaron fuera.'); });
+  [1, 2].forEach(n => { if (est[n].unicas && !est[n].contadas) avisos.push('Ninguna orden de ' + ARCH[n].nombre + ' coincide con el filtro y los tipos elegidos: revisa las columnas y la palabra del filtro.'); });
+  $('aviso').hidden = !avisos.length;
+  $('aviso').textContent = avisos.length ? '⚠ ' + avisos.join(' ') : '';
+  guardarUI.mostrar('Temporada ' + ($('temporada').value || '(sin etiqueta)') + ' · Semana 1 = ' + RH.util.fmtFecha(inicioIso) + ' · ' + (est[1].contadas + est[2].contadas).toLocaleString() + ' órdenes contadas (Shipped ' + est[1].contadas.toLocaleString() + ' + Open ' + est[2].contadas.toLocaleString() + ').');
+}
+
+// ---------- la matriz del reporte (la misma para la tabla, el TSV y el Excel)
+const L = RH.xlsx.col;
+const fmtMDY = (iso, largo) => { const d = new Date(RH.util.isoToUTC(iso)); return (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '/' + (largo ? d.getUTCFullYear() : String(d.getUTCFullYear()).slice(-2)); };
+function semanaIso(iso) {      // número de semana ISO del lunes dado
+  const d = new Date(RH.util.isoToUTC(iso)); const dia = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dia + 3);
+  const p = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  return 1 + Math.round(((d - p) / 86400000 - 3 + ((p.getUTCDay() + 6) % 7)) / 7);
+}
+
+function construirMatriz() {
+  const snap = snapshotBase; if (!snap) return null;
+  const prev = previas.find(s => s.id === $('previa').value) || null;
+  const temp = $('temporada').value.trim() || String(+snap.week1.slice(0, 4) + 1);
+  const syA = prev ? syEtiqueta(prev.season) : "SY'prev", syN = syEtiqueta(temp);
+  const titulo = $('titulo').value.trim() || 'Orders';
+  const sem = Object.keys(snap.weeks).map(Number);
+  const Lult = Math.min(NSEM, Math.max(0, ...sem, 0));
+  const C0 = 2;                                       // columna C = «Previous Season» (N/A); semana w → columna C0 + w
+  const col = w => C0 + w;
+  const g = [];                                       // g[fila0][col] = {v?, f?, s}
+  const put = (r, c, o) => { (g[r] = g[r] || [])[c] = o; };
+  const txt = (r, c, t, s) => put(r, c, { v: t, s: s || 'texto' });
+
+  const dato = (snapX, w, tipo, campos) => {
+    const b = w === 0 ? (snapX.na || {}) : ((snapX.weeks[w] || {}));
+    const o = b[tipo]; return o ? campos.reduce((t, k) => t + (+o[k] || 0), 0) : 0;
+  };
+
+  // fila 1 (índice 0): semana de calendario; fila 2: encabezados de la temporada anterior
+  txt(0, 0, 'Imported Date', 'sub'); txt(0, 1, titulo + ' by Week ' + syA, 'sub');
+  txt(1, 1, syA, 'header'); txt(1, C0, 'Previous Season', 'header');
+  for (let w = 1; w <= NSEM; w++) {
+    const lunesN = RH.util.addDays(snap.week1, (w - 1) * 7);
+    put(0, col(w), { v: semanaIso(lunesN), s: 'texto' });
+    const lunesP = prev ? RH.util.addDays(prev.week1, (w - 1) * 7) : null;
+    txt(1, col(w), 'Week ' + w + (lunesP ? ' ' + fmtMDY(lunesP) : ''), 'header');
+  }
+  // bloque SY anterior (filas 3-6)
+  const filasPrev = [[2, 'College', 'COLLEGE'], [3, 'Scholastic', 'SCHOLASTIC']];
+  filasPrev.forEach(([r, et, tipo]) => {
+    txt(r, 1, et);
+    for (let w = 0; w <= NSEM; w++) put(r, col(w) , { v: prev ? dato(prev, w, tipo, CAMPOS) : 0, s: 'int' });
+  });
+  txt(4, 1, 'Total Regalia ' + syA, 'totTexto'); txt(5, 1, 'Total Regalia ' + syA + ' cum', 'totTexto');
+  for (let w = 0; w <= NSEM; w++) {
+    const c = col(w), X = L(c);
+    put(4, c, { f: X + '3+' + X + '4', s: 'totInt' });
+    put(5, c, { f: w === 0 ? X + '5' : L(c - 1) + '6+' + X + '5', s: 'totInt' });
+  }
+  // encabezado SY nuevo (fila 7)
+  txt(6, 1, syN, 'header');
+  for (let w = 1; w <= NSEM; w++) txt(6, col(w), 'Week ' + w + ' ' + fmtMDY(RH.util.addDays(snap.week1, (w - 1) * 7), true), 'header');
+
+  // bloques Shipped (filas 8-11) y Open (filas 13-15)
+  const bloque = (r0, campo, tit, tot, cum) => {
+    txt(r0, 0, tit, 'sub');
+    [['College', 'COLLEGE'], ['Scholastic', 'SCHOLASTIC']].forEach(([et, tipo], i) => {
+      txt(r0 + i, 1, et);
+      for (let w = 0; w <= NSEM; w++) { if (w > Lult) break; put(r0 + i, col(w), { v: dato(snap, w, tipo, [campo]), s: 'int' }); }
+    });
+    txt(r0 + 2, 1, tot, 'totTexto');
+    for (let w = 0; w <= NSEM; w++) { if (w > Lult) break; const X = L(col(w)); put(r0 + 2, col(w), { f: X + (r0 + 1) + '+' + X + (r0 + 2), s: 'totInt' }); }
+    if (cum) {
+      txt(r0 + 3, 1, cum, 'totTexto');
+      for (let w = 0; w <= NSEM; w++) { if (w > Lult) break; const X = L(col(w)); put(r0 + 3, col(w), { f: w === 0 ? X + (r0 + 3) : L(col(w) - 1) + (r0 + 4) + '+' + X + (r0 + 3), s: 'totInt' }); }
+    }
+  };
+  bloque(7, 'env', "Shipped 'Shipments Report'", 'Total shipped ' + syN, 'Total shipped ' + syN + ' cum');
+  bloque(12, 'abi', "Open 'Open Orders Report'", 'Total Open ' + syN, null);
+
+  // totales (filas 16-18) y diferencias (20-22, 24-26): solo hasta la última semana con datos
+  const defs = [[15, 'Total Regalia ' + syN, X => X + '10+' + X + '15'], [16, 'Total College', X => X + '8+' + X + '13'], [17, 'Total Scholastic', X => X + '9+' + X + '14']];
+  defs.forEach(([r, et, f]) => { txt(r, 1, et, 'totTexto'); for (let w = 1; w <= Lult; w++) put(r, col(w), { f: f(L(col(w))), s: 'totInt' }); });
+  const delt = [[19, 'Delta Regalia YOY', 16, 5], [20, 'Delta College', 17, 3], [21, 'Delta Scholastic', 18, 4]];
+  delt.forEach(([r, et, a, b]) => { txt(r, 1, et, 'totTexto'); for (let w = 1; w <= Lult; w++) { const X = L(col(w)); put(r, col(w), { f: X + a + '-' + X + b, s: 'totDInt' }); } });
+  const cum = [[23, 'Delta Cum Regalia YOY', 20], [24, 'Delta College', 21], [25, 'Delta Scholastic', 22]];
+  cum.forEach(([r, et, de]) => { txt(r, 1, et, 'totTexto'); for (let w = 1; w <= Lult; w++) { const X = L(col(w)); put(r, col(w), { f: w === 1 ? X + de : L(col(w) - 1) + (r + 1) + '+' + X + de, s: 'totDInt' }); } });
+
+  // evaluar las fórmulas (solo + y −) para mostrar los valores en pantalla
+  const memo = new Map();
+  const valorDe = (r, c) => {
+    const k = r + ',' + c; if (memo.has(k)) return memo.get(k);
+    const cel = (g[r] || [])[c]; let v = 0;
+    if (cel) {
+      if (cel.f) { v = 0; cel.f.replace(/([+-]?)([A-Z]+)(\d+)/g, (_, sg, cl, fl) => { let ci = 0; for (const ch of cl) ci = ci * 26 + ch.charCodeAt(0) - 64; const x = valorDe(+fl - 1, ci - 1); v += sg === '-' ? -x : x; return ''; }); }
+      else v = typeof cel.v === 'number' ? cel.v : 0;
+    }
+    memo.set(k, v); return v;
+  };
+  const filasN = g.length, colsN = col(NSEM) + 1;
+  g.forEach((fila, r) => (fila || []).forEach((cel, c) => { if (cel && cel.f) cel.v = valorDe(r, c); }));
+  return { g, filasN, colsN, Lult, prev, syA, syN, titulo, C0, col, valorDe };
+}
+
+// ---------- pantalla
+const TIPO_FILA = { header: 'hd', totTexto: 'sub', totInt: 'sub', totDInt: 'sub' };
+function pintar() {
+  if (!snapshotBase) return;
+  matriz = construirMatriz();
+  const { g, filasN, colsN } = matriz;
+  let html = '<table>', t = [];
+  for (let r = 0; r < filasN; r++) {
+    const fila = g[r] || [];
+    const clase = (fila[1] && TIPO_FILA[fila[1].s]) || (fila[2] && TIPO_FILA[fila[2].s]) || '';
+    html += '<tr' + (clase ? ' class="' + clase + '"' : '') + '>';
+    const tr = [];
+    for (let c = 0; c < colsN; c++) {
+      const cel = fila[c];
+      const v = cel && cel.v != null ? cel.v : '';
+      const delta = cel && cel.s === 'totDInt' && typeof v === 'number';
+      html += '<td' + (delta ? ' class="' + (v < 0 ? 'neg' : v > 0 ? 'pos' : '') + '"' : '') + '>' + esc(typeof v === 'number' ? v.toLocaleString('en-US') : v) + '</td>';
+      tr.push(v);
+    }
+    html += '</tr>'; t.push(tr.join('\t'));
+  }
+  html += '</table>';
+  $('salida').innerHTML = html;
+  tsv = t.join('\n');
+  pintarGrafica();
+  $('resultados').hidden = false; $('copiar').disabled = false; $('excel').disabled = false;
+}
+
+function seriesGrafica() {
+  const m = matriz;
+  const fila = (r, hasta) => Array.from({ length: NSEM }, (_, i) => i + 1 <= hasta ? m.valorDe(r, m.col(i + 1)) : null);
+  return [
+    { nombre: 'Total Regalia ' + m.syA, r: 4, color: '7C8AA5', v: fila(4, NSEM) },
+    { nombre: 'Total shipped ' + m.syN, r: 9, color: '1F6FD1', v: fila(9, m.Lult) },
+    { nombre: 'Total Regalia ' + m.syN, r: 15, color: 'E2751F', v: fila(15, m.Lult) }
+  ];
+}
+function pintarGrafica() {
+  const m = matriz, S = seriesGrafica();
+  const W = 960, H = 320, ML = 52, MR = 14, MT = 14, MB = 30;
+  const max = Math.max(1, ...S.flatMap(s => s.v.filter(x => x != null)));
+  const paso = Math.pow(10, Math.floor(Math.log10(max))), techo = Math.ceil(max / paso) * paso;
+  const x = i => ML + (W - ML - MR) * i / (NSEM - 1), y = v => MT + (H - MT - MB) * (1 - v / techo);
+  let svg = '<svg class="sy-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Imported ' + esc(m.syA + ' vs ' + m.syN) + '">';
+  for (let k = 0; k <= 4; k++) { const v = techo * k / 4; svg += '<line x1="' + ML + '" x2="' + (W - MR) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="currentColor" opacity=".12"/><text x="' + (ML - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + Math.round(v).toLocaleString('en-US') + '</text>'; }
+  for (let w = 1; w <= NSEM; w += 4) svg += '<text x="' + x(w - 1) + '" y="' + (H - 8) + '" text-anchor="middle">' + w + '</text>';
+  S.forEach(s => {
+    let d = '', abierto = false;
+    s.v.forEach((v, i) => { if (v == null) { abierto = false; return; } d += (abierto ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); abierto = true; });
+    svg += '<path d="' + d + '" fill="none" stroke="#' + s.color + '" stroke-width="2.4" stroke-linejoin="round"/>';
+  });
+  svg += '</svg><div class="sy-leyenda">' + S.map(s => '<span><i style="background:#' + s.color + '"></i>' + esc(s.nombre) + '</span>').join('') + '</div>';
+  $('grafica').innerHTML = '<h3 class="arch-t" style="margin-top:14px">Imported ' + esc(m.syA) + ' vs ' + esc(m.syN) + ' (órdenes por semana)</h3>' + svg;
+}
+
+$('previa').addEventListener('change', () => { if (snapshotBase) pintar(); });
+['titulo'].forEach(id => $(id).addEventListener('input', () => { if (snapshotBase) pintar(); }));
+$('copiar').onclick = async () => { await RH.util.copiarTexto(tsv); RH.util.toast('Tabla copiada.', { tipo: 'ok' }); };
+
+// ---------- Excel con el mismo diseño, fórmulas vivas y gráfica nativa
+$('excel').onclick = async () => {
+  if (!matriz) return;
+  const m = matriz, wb = RH.xlsx.libro({ titulo: m.titulo + ' ' + m.syA + ' vs ' + m.syN });
+  const h = wb.hoja(m.titulo.slice(0, 28) || 'Comparativo', { grid: true });
+  const E = RH.xlsx.ESTILOS;
+  for (let r = 0; r < m.filasN; r++) {
+    const fila = (m.g[r] || []).map(c => c ? { v: c.v, f: c.f, s: c.s } : null);
+    const lleno = fila.length ? fila : [];
+    h.fila(lleno);
+  }
+  h.ancho([24, 30, 14].concat(Array(NSEM).fill(14)));
+  h.congelar(2, 3);
+  const S = seriesGrafica();
+  h.grafica({
+    tipo: 'line', titulo: 'Imported ' + m.syA + ' vs ' + m.syN,
+    categorias: Array.from({ length: NSEM }, (_, i) => (m.g[1][m.col(i + 1)] || {}).v),
+    cat: { fila: 1, c1: m.col(1), c2: m.col(NSEM) },
+    series: S.map(s => ({ nombre: s.nombre, nombreRef: { c: 1, r: s.r }, fila: s.r, c1: m.col(1), c2: m.col(NSEM), color: s.color, valores: s.v })),
+    formatoEje: '#,##0', formatoCache: '#,##0',
+    ancla: { c: 1, r: m.filasN + 2, w: 16, h: 22 }
+  });
+  const blob = await wb.blob();
+  RH.util.descargar(blob, RH.util.nombreArchivo('Imported Date comparison ' + m.syA + ' vs ' + m.syN) + '.xlsx');
+  RH.util.toast('Excel descargado con fórmulas y gráfica nativa (editable).', { tipo: 'ok' });
+};
+
+// ---------- auditoría
+function pintarAuditoria() {
+  const A = auditoria; if (!A) return;
+  const f = n => n.toLocaleString();
+  const e = A.est;
+  const filas = [
+    ['Filas leídas (Shipped / Open)', f(e[1].filas) + ' / ' + f(e[2].filas)],
+    ['Filas sin número de orden (excluidas)', f(e[1].sinId) + ' / ' + f(e[2].sinId)],
+    ['Repetidas dentro del mismo archivo', f(e[1].dup) + ' / ' + f(e[2].dup)],
+    ['Órdenes de Open que también están en Shipped', f(e[2].enAmbos) + (document.getElementById('soloEnviada').checked ? ' (solo cuentan como Shipped)' : ' (cuentan en los dos)')],
+    ['Órdenes únicas (Shipped / Open)', f(e[1].unicas) + ' / ' + f(e[2].unicas)],
+    ['Fuera del filtro', f(e[1].fuera) + ' / ' + f(e[2].fuera)],
+    ['Contadas (Shipped / Open)', f(e[1].contadas) + ' / ' + f(e[2].contadas)],
+    ['De ellas en N/A (antes de la semana 1 o sin fecha)', f(e[1].na) + ' / ' + f(e[2].na)]
+  ];
+  $('audConteos').innerHTML = filas.map(r => '<tr><td>' + esc(r[0]) + '</td><td class="num"><strong>' + esc(r[1]) + '</strong></td></tr>').join('');
+  $('auditoriaCard').hidden = false;
+}
+
+// ---------- guardar en el dashboard
+const guardarUI = RH.puente.panelGuardar({
+  contenedor: $('panelGuardar'),
+  dataset: DATASET,
+  construir() {
+    if (!ultimo || !snapshotBase) throw new Error('Primero procesa los archivos.');
+    return Object.assign({}, snapshotBase, { season: $('temporada').value.trim(), meta: Object.assign({}, snapshotBase.meta, { config: Object.assign({}, snapshotBase.meta.config, { titulo: $('titulo').value.trim() }) }) });
+  },
+  validar(snap) {
+    const avisos = [];
+    if (new Date(snap.week1 + 'T00:00:00Z').getUTCDay() !== 1) avisos.push('El lunes de la semana 1 (' + snap.week1 + ') no es lunes.');
+    if (snap.meta.filas && snap.meta.antesDeInicio > snap.meta.filas * 0.3) avisos.push('El ' + Math.round(snap.meta.antesDeInicio / snap.meta.filas * 100) + ' % de las órdenes quedó antes de la semana 1. ¿La fecha de inicio corresponde a estos archivos?');
+    avisos.push(...RH.puente.avisoSemanas(snap));
+    return avisos.length ? avisos.join(' ') : null;
+  }
+});
+
+armarArchivos();
+$('go').onclick = procesar;
+RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
+cargarPrevias();
+window.addEventListener('focus', () => { cargarPrevias().then(() => { if (snapshotBase) pintar(); }); });
+RH.puente.invalidarAlCambiar([$('cfgArchivos'), $('inicio'), $('palabra'), $('gCollege'), $('soloEnviada')], () => {
+  if (procesando) { cambioDurante = true; return; }
+  if (!ultimo) return;
+  ultimo = null; guardarUI.ocultar();
+  $('aviso').hidden = false;
+  $('aviso').textContent = 'La configuración cambió: pulsa «Procesar» otra vez antes de guardar en el dashboard.';
+});
+$('inicio').addEventListener('change', cargarPrevias);
+</script>
+</body>
+</html>

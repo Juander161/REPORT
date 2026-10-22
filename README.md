@@ -352,3 +352,10 @@ Excel (.xlsx), que la tabla copiada a Excel, los totales y el detalle sean idén
 los de `reportes/originales/`, con y sin la casilla de «filas con todo en 0», tanto
 fijando la configuración como dejando los valores por defecto. También se verificó
 que la «Tabla del reporte» del dashboard, reconstruida desde lo guardado, sea idéntica.
+
+
+## Comparativo SY (Shipped + Open)
+
+`reportes/comparativo-sy.html` replica el reporte «Imported Date comparison SY26 vs SY27»: Shipments Report (enviadas) + Open Orders Report (abiertas), órdenes únicas por número, College / Scholastic por semana (52 + «Previous Season» = N/A), temporada anterior tomada de lo guardado, totales, acumulados, deltas YOY y gráfica. Se copia a Excel o se descarga como .xlsx con fórmulas y gráfica nativa. Se guarda en el dashboard COMPARATIVO SY; la temporada guardada pasa a ser la «anterior» del año siguiente.
+
+En los reportes de 2 archivos, la fila del encabezado se detecta sola (títulos arriba del reporte) y se puede corregir; las columnas de cantidad se reconocen por QTY, QUANTITY, CANT, UNITS… y se pueden agregar otras a mano.

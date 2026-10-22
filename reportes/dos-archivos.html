@@ -45,6 +45,8 @@
     <h2 class="step-h"><span class="step-n">3</span> Columnas de cantidad (QTY) y su función</h2>
     <p class="muted"><strong>Objetivo</strong>: se suman y la orden cuenta si es &gt; 0 · <strong>Debe ser 0</strong>: si alguna tiene cantidad, la orden ya no es Tassels Only · <strong>Ignorar</strong>. Elige la columna que corresponde en cada archivo (puede llamarse distinto).</p>
     <div class="table-wrap"><table class="tbl-cfg" id="qtyTabla"></table></div>
+    <p class="aviso" id="qtyVacio" hidden>⚠ No encontré columnas cuyo nombre indique cantidad (QTY, QUANTITY, CANT, UNITS…). Revisa que la «Fila del encabezado» sea la correcta o agrega las columnas a mano.</p>
+    <div class="actions" id="qtyAdd" hidden><select id="qtyNueva"></select><button id="qtyAgregar" class="btn sm" type="button">+ Agregar columna</button></div>
   </section>
 
   <section class="card">
@@ -94,7 +96,7 @@ const HS = R === 'homeship';
 const DATASET = R;
 const CAMPOS = HS ? ['hs', 'to', 'ceros'] : ['to', 'ceros', 'filas'];
 const NOMBRE_ARCH = { 1: 'A1', 2: 'A2' };
-const OBJETIVO_DEFECTO = ['TASSEL QTY', 'MASCOT MEDAL QTY'];
+const OBJETIVO_DEFECTO = ['TASSEL', 'MASCOTMEDAL'];
 const ROLES = { obj: 'Objetivo (cuenta)', cero: 'Debe ser 0', ign: 'Ignorar' };
 
 const enc = { 1: [], 2: [] };
@@ -102,8 +104,8 @@ let qtys = [];                    // [{nombre, rol, c1, c2}]
 let auditoria = null, resultado = null, snapshotBase = null;
 let ultimo = null, procesando = false, cambioDurante = false, tsv = '';
 
-const norm = s => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
-const rolPorDefecto = nombre => OBJETIVO_DEFECTO.includes(nombre.toUpperCase()) ? 'obj' : 'cero';
+const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '');
+const rolPorDefecto = nombre => OBJETIVO_DEFECTO.includes(norm(nombre)) ? 'obj' : 'cero';
 function normId(v) {
   const t = String(v == null ? '' : v).trim().replace(/,/g, '');
   if (t === '') return '';
@@ -131,6 +133,7 @@ function armarArchivos() {
         <input type="file" id="archivo${n}" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       </label>
       <label class="fld fld-hoja" id="hojaWrap${n}" hidden>Hoja del libro <select id="hoja${n}"></select></label>
+      <label class="fld fld-hoja">Fila del encabezado <input type="number" min="1" id="filaEnc${n}" value="1" style="width:90px"><span class="hint">Se detecta sola; cámbiala si el reporte trae títulos arriba.</span></label>
       <div class="form-grid">
         <label class="fld">Columna del número de orden <select id="colId${n}"></select></label>
         <label class="fld">Columna de fecha <select id="colFecha${n}"></select></label>
@@ -144,6 +147,7 @@ function armarArchivos() {
     RH.puente.zonaArchivo($('zona' + n), $('archivo' + n), $('archivoInfo' + n));
     $('archivo' + n).addEventListener('change', () => alElegirArchivo(n));
     $('hoja' + n).addEventListener('change', () => alElegirArchivo(n));
+    $('filaEnc' + n).addEventListener('change', () => alElegirArchivo(n));
   });
 }
 
@@ -159,9 +163,7 @@ async function alElegirArchivo(n) {
   $('hojaWrap' + n).hidden = true;
   if (!f) { enc[n] = []; sincronizarQty(); return; }
   try {
-    const cols = RH.puente.esExcel(f)
-      ? (await RH.puente.prepararExcel(f, $('hoja' + n), $('hojaWrap' + n))).map(c => String(c).replace(/^﻿/, '').trim().toUpperCase())
-      : await RH.csv.encabezados(f);
+    const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
     enc[n] = cols;
     llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
     llenar($('colFecha' + n), cols, [/^IMPORTED$/, /FECHA|DATE|IMPORTED/]);
@@ -178,10 +180,12 @@ async function alElegirArchivo(n) {
 function sincronizarQty() {
   const previos = new Map(qtys.map(q => [norm(q.nombre), q]));
   const lista = [];
-  [1, 2].forEach(n => enc[n].filter(c => /\sQTY$/.test(c)).forEach(c => { if (!lista.some(x => norm(x) === norm(c))) lista.push(c); }));
+  [1, 2].forEach(n => enc[n].filter(c => RH.csv.esCantidad(c)).forEach(c => { if (!lista.some(x => norm(x) === norm(c))) lista.push(c); }));
+  qtys.filter(q => q.manual).forEach(q => { if (!lista.some(x => norm(x) === norm(q.nombre))) lista.push(q.nombre); });
   const buscar = (n, nombre) => enc[n].find(c => norm(c) === norm(nombre)) || '';
   qtys = lista.map(nm => {
     const p = previos.get(norm(nm));
+    if (p && p.manual) return p;
     return p ? Object.assign(p, { c1: enc[1].includes(p.c1) ? p.c1 : buscar(1, nm), c2: enc[2].includes(p.c2) ? p.c2 : buscar(2, nm) })
              : { nombre: nm, rol: rolPorDefecto(nm), c1: buscar(1, nm), c2: buscar(2, nm) };
   });
@@ -190,15 +194,29 @@ function sincronizarQty() {
 
 function pintarQty() {
   const t = $('qtyTabla');
-  if (!qtys.length) { t.innerHTML = '<tr><td class="muted">Elige los archivos para ver sus columnas QTY.</td></tr>'; return; }
+  const hayArchivo = enc[1].length || enc[2].length;
+  $('qtyVacio').hidden = !hayArchivo || qtys.length > 0;
+  $('qtyAdd').hidden = !hayArchivo;
+  if (!qtys.length) { t.innerHTML = '<tr><td class="muted">' + (hayArchivo ? 'No hay columnas con nombre de cantidad; agrégalas abajo.' : 'Elige los archivos para ver sus columnas de cantidad.') + '</td></tr>'; return; }
   const opciones = n => '<option value="">— no está en ' + NOMBRE_ARCH[n] + ' —</option>' + enc[n].map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
   t.innerHTML = '<tr><th>Columna</th><th>Función</th><th>Columna en A1</th><th>Columna en A2</th></tr>' +
     qtys.map((q, i) => '<tr><td>' + esc(q.nombre) + '</td>' +
       '<td><select data-i="' + i + '" data-k="rol">' + Object.entries(ROLES).map(([v, tx]) => '<option value="' + v + '"' + (q.rol === v ? ' selected' : '') + '>' + tx + '</option>').join('') + '</select></td>' +
       '<td><select data-i="' + i + '" data-k="c1">' + opciones(1) + '</select></td>' +
       '<td><select data-i="' + i + '" data-k="c2">' + opciones(2) + '</select></td></tr>').join('');
+  llenarQtyNueva();
   qtys.forEach((q, i) => { t.querySelector('select[data-i="' + i + '"][data-k="c1"]').value = q.c1; t.querySelector('select[data-i="' + i + '"][data-k="c2"]').value = q.c2; });
 }
+function llenarQtyNueva() {
+  const todas = [...new Set([...enc[1], ...enc[2]])].filter(c => c && !qtys.some(q => norm(q.nombre) === norm(c)));
+  $('qtyNueva').replaceChildren(...todas.map(c => new Option(c, c)));
+}
+$('qtyAgregar').onclick = () => {
+  const nm = $('qtyNueva').value; if (!nm) return;
+  const buscar = (n, nombre) => enc[n].find(c => norm(c) === norm(nombre)) || '';
+  qtys.push({ nombre: nm, rol: 'cero', c1: buscar(1, nm), c2: buscar(2, nm), manual: true });
+  pintarQty();
+};
 $('qtyTabla').addEventListener('change', ev => { const el = ev.target; if (el.dataset.i != null) qtys[+el.dataset.i][el.dataset.k] = el.value; });
 
 // ---------- procesar
@@ -208,7 +226,7 @@ async function procesar() {
 }
 
 async function procesarArchivos() {
-  const archivos = [1, 2].map(n => ({ n, file: $('archivo' + n).files[0], id: $('colId' + n).value, fecha: $('colFecha' + n).value, tipo: $('colTipo' + n).value, filtro: HS ? $('colFiltro' + n).value : '', fmt: $('fmt' + n).value, hoja: null }));
+  const archivos = [1, 2].map(n => ({ n, file: $('archivo' + n).files[0], id: $('colId' + n).value, fecha: $('colFecha' + n).value, tipo: $('colTipo' + n).value, filtro: HS ? $('colFiltro' + n).value : '', fmt: $('fmt' + n).value, filaEnc: Math.max(1, Math.floor(+$('filaEnc' + n).value) || 1) - 1, hoja: null }));
   if (archivos.some(a => !a.file)) { $('estado').textContent = 'Elige los dos archivos (A1 y A2).'; return; }
   const inicio = Date.parse($('inicio').value), inicioIso = $('inicio').value;
   if (!(inicio > 0)) { $('estado').textContent = 'Escribe el lunes de la semana 1.'; return; }
@@ -232,7 +250,7 @@ async function procesarArchivos() {
       const a = archivos[n - 1];
       const ix = {};
       const r = await RH.csv.leer(a.file, {
-        hoja: a.hoja, columnasFecha: [a.fecha],
+        hoja: a.hoja, columnasFecha: [a.fecha], filaEncabezado: a.filaEnc,
         alEncabezado(h) {
           ix.id = h.indexOf(a.id); ix.fecha = h.indexOf(a.fecha); ix.tipo = h.indexOf(a.tipo); ix.filtro = HS ? h.indexOf(a.filtro) : -1;
           if (ix.id < 0 || ix.fecha < 0 || ix.tipo < 0 || (HS && ix.filtro < 0)) throw new Error('En ' + NOMBRE_ARCH[n] + ' no encontré la columna de orden, de fecha, de tipo' + (HS ? ' o del filtro' : '') + '.');

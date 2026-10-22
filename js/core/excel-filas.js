@@ -441,8 +441,9 @@
     const ss = await cadenasCompartidas(file, lib);
     const hoja = elegirHoja(lib, opts.hoja);
     let enc = null;
+    let saltar = opts.filaEncabezado || 0;      // filas con contenido anteriores al encabezado (títulos del reporte)
     const reader = (await streamTexto(file, hoja.entrada)).getReader();
-    // basta con leer hasta encontrar la primera fila con contenido
+    // basta con leer hasta encontrar la fila del encabezado
     const parar = {};
     try {
       await porElementos(new ReadableStream({
@@ -450,12 +451,38 @@
       }), 'row', xml => {
         if (enc) return;
         const f = filaDesdeXml(xml, { ss, d1904: lib.d1904, fechas: null });
-        if (f) { enc = f; throw parar; }
+        if (!f) return;
+        if (saltar > 0) { saltar--; return; }
+        enc = f; throw parar;
       });
     } catch (e) { if (e !== parar) throw e; }
     try { reader.cancel(); } catch (e) { /* nada */ }
     if (!enc) throw new Error('La hoja «' + hoja.nombre + '» no tiene datos.');
     return enc;
+  }
+
+  /** Primeras filas con contenido de la hoja (para detectar el encabezado y las columnas), como textos */
+  async function muestra(file, opts) {
+    opts = opts || {};
+    const max = opts.max || 120;
+    const lib = await libro(file);
+    const ss = await cadenasCompartidas(file, lib);
+    const hoja = elegirHoja(lib, opts.hoja);
+    const filas = [];
+    const reader = (await streamTexto(file, hoja.entrada)).getReader();
+    const parar = {};
+    try {
+      await porElementos(new ReadableStream({
+        async pull(c) { const { done, value } = await reader.read(); if (done) c.close(); else c.enqueue(value); }
+      }), 'row', xml => {
+        const f = filaDesdeXml(xml, { ss, d1904: lib.d1904, fechas: null });
+        if (!f) return;
+        filas.push(f);
+        if (filas.length >= max) throw parar;
+      });
+    } catch (e) { if (e !== parar) throw e; }
+    try { reader.cancel(); } catch (e) { /* nada */ }
+    return filas;
   }
 
   /**
@@ -481,6 +508,7 @@
     const nombresFecha = new Set((opts.columnasFecha || []).map(n => String(n).trim().toUpperCase()));
     const ctx = { ss, d1904: lib.d1904, fechas: null, estilos, cuenta: { serie: 0, texto: 0, numero: 0 } };
     let fechas = null, ancho = 0;
+    let saltar = opts.filaEncabezado || 0;      // filas con contenido anteriores al encabezado (títulos del reporte)
     // filas en blanco vistas desde la última fila con datos: se entregan solo si
     // después aparece otra fila con datos (en el CSV de Excel salen como ",,,,")
     let enBlanco = 0, ultimaFila = 0;
@@ -491,6 +519,7 @@
       if (fechas && n > ultimaFila + 1) enBlanco += n - ultimaFila - 1; // filas que el XML ni siquiera trae
       ultimaFila = Math.max(ultimaFila, n);
       if (!fila) { if (fechas) enBlanco++; return; }
+      if (!fechas && saltar > 0) { saltar--; return; }
       if (!fechas) {
         fechas = new Set();
         ancho = fila.length;
@@ -507,5 +536,5 @@
     return { hoja: hoja.nombre, aviso: avisoFechas(ctx.cuenta) };
   }
 
-  RH.excelFilas = { esExcel, esExcelViejo, hojas, encabezados, leer, serialAFecha };
+  RH.excelFilas = { esExcel, esExcelViejo, hojas, encabezados, leer, muestra, serialAFecha };
 })(window.RH = window.RH || {});

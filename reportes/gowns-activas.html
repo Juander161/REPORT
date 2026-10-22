@@ -53,6 +53,7 @@
     <h2 class="step-h"><span class="step-n">4</span> Productos y medidas</h2>
     <p class="muted">Cada fila es un producto; elige qué columna lo contiene en cada archivo (puede llamarse distinto). Se guarda un reporte por producto y medida.</p>
     <div class="table-wrap"><table class="tbl-cfg" id="prodTabla"></table></div>
+    <p class="aviso" id="prodVacio" hidden>⚠ No encontré columnas cuyo nombre indique cantidad (QTY, QUANTITY, CANT, UNITS…). Revisa que la «Fila del encabezado» sea la correcta o usa «+ Agregar producto» y elige la columna a mano.</p>
     <div class="actions"><button id="addProd" class="btn sm" type="button">+ Agregar producto</button></div>
     <div class="fld" style="margin-top:14px">Medidas
       <div class="checks anchos" id="modos">
@@ -120,8 +121,8 @@ let resultados = new Map();
 let ultimo = null, procesando = false, cambioDurante = false, tsv = '';
 let auditoria = null;             // datos del último proceso para auditar contra tu revisión manual
 
-const limpio = col => col.replace(/\s+QTY$/i, '').trim().replace(/\s+/g, '_');
-const norm = s => String(s).toUpperCase().replace(/\s+QTY$/, '').replace(/[^A-Z0-9]/g, '');
+const limpio = col => col.replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/i, '').trim().replace(/\s+/g, '_');
+const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '');
 const tipoClave = v => String(v == null ? '' : v).trim().toUpperCase().replace(/\s+/g, ' ');
 const gruposLista = () => $('grupos').value.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
 const etiquetaTemporada = () => $('temporada').value.trim().replace(/\s+/g, '_');
@@ -145,6 +146,7 @@ function armarArchivos() {
         <input type="file" id="archivo${n}" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       </label>
       <label class="fld fld-hoja" id="hojaWrap${n}" hidden>Hoja del libro <select id="hoja${n}"></select></label>
+      <label class="fld fld-hoja">Fila del encabezado <input type="number" min="1" id="filaEnc${n}" value="1" style="width:90px"><span class="hint">Se detecta sola; cámbiala si el reporte trae títulos arriba.</span></label>
       <div class="form-grid">
         <label class="fld">Columna del número de orden <select id="colId${n}"></select></label>
         <label class="fld">Columna de fecha <select id="colFecha${n}"></select></label>
@@ -157,6 +159,7 @@ function armarArchivos() {
     RH.puente.zonaArchivo($('zona' + n), $('archivo' + n), $('archivoInfo' + n));
     $('archivo' + n).addEventListener('change', () => alElegirArchivo(n));
     $('hoja' + n).addEventListener('change', () => alElegirArchivo(n));
+    $('filaEnc' + n).addEventListener('change', () => alElegirArchivo(n));
     ['colFecha', 'colTipo', 'colId'].forEach(k => $(k + n).addEventListener('change', () => { if (k === 'colTipo') mapeoClave = ''; }));
   });
 }
@@ -174,9 +177,7 @@ async function alElegirArchivo(n) {
   mapeoClave = '';
   if (!f) { enc[n] = []; sincronizarProductos(); return; }
   try {
-    const cols = RH.puente.esExcel(f)
-      ? (await RH.puente.prepararExcel(f, $('hoja' + n), $('hojaWrap' + n))).map(c => String(c).replace(/^﻿/, '').trim().toUpperCase())
-      : await RH.csv.encabezados(f);
+    const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
     enc[n] = cols;
     llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
     llenar($('colFecha' + n), cols, [/^IMPORTED$/, /FECHA|DATE|IMPORTED/]);
@@ -191,7 +192,7 @@ async function alElegirArchivo(n) {
 // ---------- productos: una fila por producto con su columna en cada archivo
 function sincronizarProductos() {
   const previos = new Map(productos.map(p => [norm(p.nombre), p]));
-  const qty = n => enc[n].filter(c => /\sQTY$/.test(c));
+  const qty = n => enc[n].filter(c => RH.csv.esCantidad(c));
   const nombres = [];
   [1, 2].forEach(n => qty(n).forEach(c => { if (!nombres.some(x => norm(x) === norm(c))) nombres.push(c); }));
   const buscar = (n, nombre) => enc[n].find(c => norm(c) === norm(nombre)) || '';
@@ -208,6 +209,8 @@ function sincronizarProductos() {
 
 function pintarProductos() {
   const t = $('prodTabla');
+  const hayArchivo = enc[1].length || enc[2].length;
+  $('prodVacio').hidden = !hayArchivo || productos.length > 0;
   if (!productos.length) { t.innerHTML = '<tr><td class="muted">Elige los archivos o agrega un producto.</td></tr>'; return; }
   const opciones = n => '<option value="">— no está en ' + NOMBRE_ARCH[n] + ' —</option>' + enc[n].map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
   t.innerHTML = '<tr><th></th><th>Producto (nombre del reporte)</th><th>Columna en A1</th><th>Columna en A2</th><th></th></tr>' +
@@ -230,7 +233,12 @@ $('prodTabla').addEventListener('click', ev => {
   productos.splice(+b.dataset.del, 1); pintarProductos();
   $('prodTabla').dispatchEvent(new Event('change', { bubbles: true }));
 });
-$('addProd').onclick = () => { productos.push({ nombre: 'PRODUCTO', c1: '', c2: '', on: true, manual: true }); pintarProductos(); };
+$('addProd').onclick = () => {
+  const libre = n => enc[n].find(c => !productos.some(p => p.c1 === c || p.c2 === c)) || '';
+  const c1 = libre(1), c2 = libre(2);
+  productos.push({ nombre: limpio(c1 || c2 || 'PRODUCTO'), c1, c2, on: true, manual: true });
+  pintarProductos();
+};
 
 // ---------- tipos: detectar los valores de cada archivo y agruparlos
 function adivinarGrupo(valor) {
@@ -246,7 +254,7 @@ async function detectar() {
     const hoja = RH.puente.esExcel(file) ? $('hoja' + n).value : null;
     let i = -1;
     await RH.csv.leer(file, {
-      hoja,
+      hoja, filaEncabezado: Math.max(1, Math.floor(+$('filaEnc' + n).value) || 1) - 1,
       alEncabezado(h) { i = h.indexOf(col); if (i < 0) throw new Error('No encontré la columna ' + col + ' en ' + NOMBRE_ARCH[n]); },
       alFila(row) {
         const v = tipoClave(row[i]);
@@ -263,7 +271,7 @@ async function detectar() {
   pintarTipos();
   $('detectarInfo').textContent = mapa.size + ' valor(es) distinto(s) de tipo.';
 }
-const claveTipos = () => [1, 2].map(n => { const f = $('archivo' + n).files[0]; return f ? [f.name, f.size, f.lastModified, $('hoja' + n).value, $('colTipo' + n).value].join('|') : ''; }).join('||');
+const claveTipos = () => [1, 2].map(n => { const f = $('archivo' + n).files[0]; return f ? [f.name, f.size, f.lastModified, $('hoja' + n).value, $('filaEnc' + n).value, $('colTipo' + n).value].join('|') : ''; }).join('||');
 
 function pintarTipos() {
   const cont = $('tiposTabla');
@@ -294,7 +302,7 @@ async function procesar() {
 }
 
 async function procesarArchivos() {
-  const archivos = [1, 2].map(n => ({ n, file: $('archivo' + n).files[0], id: $('colId' + n).value, fecha: $('colFecha' + n).value, tipo: $('colTipo' + n).value, fmt: $('fmt' + n).value, hoja: null }));
+  const archivos = [1, 2].map(n => ({ n, file: $('archivo' + n).files[0], id: $('colId' + n).value, fecha: $('colFecha' + n).value, tipo: $('colTipo' + n).value, fmt: $('fmt' + n).value, filaEnc: Math.max(1, Math.floor(+$('filaEnc' + n).value) || 1) - 1, hoja: null }));
   if (archivos.some(a => !a.file)) { $('estado').textContent = 'Elige los dos archivos (A1 y A2).'; return; }
   const inicio = Date.parse($('inicio').value), inicioIso = $('inicio').value;
   if (!(inicio > 0)) { $('estado').textContent = 'Escribe el lunes de la semana 1.'; return; }
@@ -333,7 +341,7 @@ async function procesarArchivos() {
       const a = archivos[n - 1];
       const ix = {};
       const r = await RH.csv.leer(a.file, {
-        hoja: a.hoja, columnasFecha: [a.fecha],
+        hoja: a.hoja, columnasFecha: [a.fecha], filaEncabezado: a.filaEnc,
         alEncabezado(h) {
           ix.id = h.indexOf(a.id); ix.fecha = h.indexOf(a.fecha); ix.tipo = h.indexOf(a.tipo);
           if (ix.id < 0 || ix.fecha < 0 || ix.tipo < 0) throw new Error('En ' + NOMBRE_ARCH[n] + ' no encontré la columna de orden, de fecha o de tipo.');

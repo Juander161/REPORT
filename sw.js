@@ -1,7 +1,7 @@
 /* Report Hub · service worker (funcionamiento sin conexión).
    IMPORTANTE: al publicar cambios, sube el número de VERSION para que cada
    persona reciba el aviso «Nueva versión disponible». */
-const VERSION = 'report-hub-v1.9.0';
+const VERSION = 'report-hub-v1.10.0';
 const DATOS = 'report-hub-datos';
 
 const ARCHIVOS = [
@@ -38,6 +38,7 @@ const ARCHIVOS = [
   'reportes/gowns.html',
   'reportes/gowns-activas.html',
   'reportes/dos-archivos.html',
+  'reportes/comparativo-sy.html',
   'data/base-compartida.js',
   'reportes/plantilla.html',
   'reportes/originales/CREARR2.html',
