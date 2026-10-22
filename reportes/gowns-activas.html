@@ -53,7 +53,7 @@
     <h2 class="step-h"><span class="step-n">4</span> Productos y medidas</h2>
     <p class="muted">Cada fila es un producto; elige qué columna lo contiene en cada archivo (puede llamarse distinto). Se guarda un reporte por producto y medida.</p>
     <div class="table-wrap"><table class="tbl-cfg" id="prodTabla"></table></div>
-    <p class="aviso" id="prodVacio" hidden>⚠ No encontré columnas cuyo nombre indique cantidad (QTY, QUANTITY, CANT, UNITS…). Revisa que la «Fila del encabezado» sea la correcta o usa «+ Agregar producto» y elige la columna a mano.</p>
+    <p class="aviso" id="prodVacio" hidden>⚠ No encontré columnas con números (cantidades). Revisa que la «Fila del encabezado» sea la correcta o usa «+ Agregar producto» y elige la columna a mano.</p>
     <div class="actions"><button id="addProd" class="btn sm" type="button">+ Agregar producto</button></div>
     <div class="fld" style="margin-top:14px">Medidas
       <div class="checks anchos" id="modos">
@@ -112,7 +112,7 @@ const DATASET = 'gowns-activas';
 const MODOS = { sum: 'cantidades', count: 'órdenes' };
 const NOMBRE_ARCH = { 1: 'A1', 2: 'A2' };
 
-const enc = { 1: [], 2: [] };     // encabezados (mayúsculas) de cada archivo
+const enc = { 1: [], 2: [] }, numericas = { 1: new Set(), 2: new Set() };     // encabezados (mayúsculas) de cada archivo
 let productos = [];               // [{nombre, c1, c2, on}]
 let mapeo = new Map();            // tipo (texto) -> grupo ('' = ignorar)
 let tiposVistos = new Map();      // tipo -> {1: n, 2: n}
@@ -122,7 +122,7 @@ let ultimo = null, procesando = false, cambioDurante = false, tsv = '';
 let auditoria = null;             // datos del último proceso para auditar contra tu revisión manual
 
 const limpio = col => col.replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/i, '').trim().replace(/\s+/g, '_');
-const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '');
+const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '').replace(/S$/, '');
 const tipoClave = v => String(v == null ? '' : v).trim().toUpperCase().replace(/\s+/g, ' ');
 const gruposLista = () => $('grupos').value.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
 const etiquetaTemporada = () => $('temporada').value.trim().replace(/\s+/g, '_');
@@ -158,6 +158,7 @@ function armarArchivos() {
   [1, 2].forEach(n => {
     RH.puente.zonaArchivo($('zona' + n), $('archivo' + n), $('archivoInfo' + n));
     $('archivo' + n).addEventListener('change', () => alElegirArchivo(n));
+    ['colId', 'colFecha', 'colTipo'].forEach(k => $(k + n).addEventListener('change', sincronizarProductos));
     $('hoja' + n).addEventListener('change', () => alElegirArchivo(n));
     $('filaEnc' + n).addEventListener('change', () => alElegirArchivo(n));
     ['colFecha', 'colTipo', 'colId'].forEach(k => $(k + n).addEventListener('change', () => { if (k === 'colTipo') mapeoClave = ''; }));
@@ -175,10 +176,11 @@ async function alElegirArchivo(n) {
   const f = $('archivo' + n).files[0];
   $('hojaWrap' + n).hidden = true;
   mapeoClave = '';
-  if (!f) { enc[n] = []; sincronizarProductos(); return; }
+  if (!f) { enc[n] = []; numericas[n] = new Set(); sincronizarProductos(); return; }
   try {
     const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
     enc[n] = cols;
+    numericas[n] = await RH.puente.columnasNumericas(f, $('hoja' + n), $('filaEnc' + n));
     llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
     llenar($('colFecha' + n), cols, [/^IMPORTED$/, /FECHA|DATE|IMPORTED/]);
     llenar($('colTipo' + n), cols, [/^ASSIGNMENT TYPE$/, /TYPE|TIPO/]);
@@ -192,7 +194,8 @@ async function alElegirArchivo(n) {
 // ---------- productos: una fila por producto con su columna en cada archivo
 function sincronizarProductos() {
   const previos = new Map(productos.map(p => [norm(p.nombre), p]));
-  const qty = n => enc[n].filter(c => RH.csv.esCantidad(c));
+  const usadas = n => new Set(['colId', 'colFecha', 'colTipo'].map(k => $(k + n) && $(k + n).value).filter(Boolean));
+  const qty = n => enc[n].filter(c => c && !usadas(n).has(c) && (numericas[n].has(c) || RH.csv.esCantidad(c)));
   const nombres = [];
   [1, 2].forEach(n => qty(n).forEach(c => { if (!nombres.some(x => norm(x) === norm(c))) nombres.push(c); }));
   const buscar = (n, nombre) => enc[n].find(c => norm(c) === norm(nombre)) || '';
