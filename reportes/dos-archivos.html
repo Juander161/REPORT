@@ -182,7 +182,11 @@ async function alElegirArchivo(n) {
 // columnas que pueden ser cantidades: las de contenido numérico (el nombre no importa), sin las de orden/fecha/tipo/filtro
 function candidatas(n) {
   const usadas = new Set(['colId', 'colFecha', 'colTipo', 'colFiltro'].map(k => $(k + n) && $(k + n).value).filter(Boolean));
-  return enc[n].filter(c => c && !usadas.has(c) && (numericas[n].has(c) || RH.csv.esCantidad(c)));
+  const libres = enc[n].filter(c => c && !usadas.has(c));
+  // si el archivo trae las columnas de producto conocidas (GOWNS, TASSELS, Tassel Assembly…) solo se muestran esas;
+  // las demás se ignoran (se pueden agregar a mano). Si no hay ninguna, se proponen las de contenido numérico.
+  const conocidas = libres.filter(c => RH.csv.esProductoConocido(c));
+  return conocidas.length ? conocidas : libres.filter(c => numericas[n].has(c) || RH.csv.esCantidad(c));
 }
 function sincronizarQty() {
   const previos = new Map(qtys.map(q => [norm(q.nombre), q]));

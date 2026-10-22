@@ -76,8 +76,8 @@
     return i < 0 ? 0 : i;
   }
   /** ¿El nombre de la columna parece una cantidad? (QTY, QUANTITY, CANT, UNITS…) */
-  const esCantidad = nombre => /(^|[^A-Z])(QTY|QUANTITY|CANT|CANTIDAD|UNITS|UNIDADES|PCS|PIEZAS)([^A-Z]|$)|QTY$/i.test(String(nombre)) ||
-    /^(GOWN|TASSEL|CAP|STOLE|HOOD|CORD|MASCOT[ _-]?MEDAL)S?( ASSEMBLY| QTY)?$/i.test(String(nombre).trim());   // productos conocidos: GOWNS, Tassel Assembly…
+  const esProductoConocido = nombre => /^(GOWN|TASSEL|CAP|STOLE|HOOD|CORD|MASCOT[ _-]?MEDAL)S?( ASSEMBLY| QTY)?$/i.test(String(nombre).trim());
+  const esCantidad = nombre => /(^|[^A-Z])(QTY|QUANTITY|CANT|CANTIDAD|UNITS|UNIDADES|PCS|PIEZAS)([^A-Z]|$)|QTY$/i.test(String(nombre)) || esProductoConocido(nombre);   // productos conocidos: GOWNS, Tassel Assembly…
 
   /** Primeras filas con contenido (CSV o Excel), como textos, para detectar encabezado y columnas */
   async function muestra(file, opts) {
@@ -153,5 +153,5 @@
     return { filas, header };
   }
 
-  RH.csv = { splitLinea, detectarDelim, parseFecha, num, semana, encabezados, muestra, detectarEncabezado, esCantidad, leer, DIA };
+  RH.csv = { splitLinea, detectarDelim, parseFecha, num, semana, encabezados, muestra, detectarEncabezado, esCantidad, esProductoConocido, leer, DIA };
 })(window.RH = window.RH || {});
