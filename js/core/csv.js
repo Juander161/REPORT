@@ -60,10 +60,45 @@
 
   /** Lee solo los encabezados (en mayúsculas). Acepta CSV o Excel (.xlsx) */
   async function encabezados(file, opts) {
+    opts = opts || {};
     if (esExcel(file)) return (await RH.excelFilas.encabezados(file, opts)).map(c => String(c).trim().toUpperCase());
-    const txt = await file.slice(0, 300000).text();
-    const primera = txt.split(/\r?\n/)[0].replace(/^\uFEFF/, '');
-    return splitLinea(primera, detectarDelim(primera)).map(c => c.trim().toUpperCase());
+    const filas = await muestra(file, { max: (opts.filaEncabezado || 0) + 1 });
+    const f = filas[opts.filaEncabezado || 0] || [];
+    return f.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
+  }
+
+  /** Índice (entre las filas con contenido) de la fila de encabezado: la primera con muchos textos no numéricos */
+  function detectarEncabezado(filas) {
+    const txt = f => f.filter(c => { const t = String(c).trim(); return t !== '' && !isFinite(Number(t.replace(/,/g, ''))); }).length;
+    const sample = filas.slice(0, 40), cuentas = sample.map(txt);
+    const max = Math.max(0, ...cuentas);
+    const i = cuentas.findIndex(c => c >= Math.max(2, Math.ceil(max * 0.6)));
+    return i < 0 ? 0 : i;
+  }
+  /** ¿El nombre de la columna parece una cantidad? (QTY, QUANTITY, CANT, UNITS…) */
+  const esCantidad = nombre => /(^|[^A-Z])(QTY|QUANTITY|CANT|CANTIDAD|UNITS|UNIDADES|PCS|PIEZAS)([^A-Z]|$)|QTY$/i.test(String(nombre));
+
+  /** Primeras filas con contenido (CSV o Excel), como textos, para detectar encabezado y columnas */
+  async function muestra(file, opts) {
+    opts = opts || {};
+    const max = opts.max || 120;
+    if (esExcel(file)) return RH.excelFilas.muestra(file, { hoja: opts.hoja, max });
+    const txt = (await file.slice(0, 600000).text()).replace(/^\uFEFF/, '');
+    const delim = detectarDelim(txt.split('\n')[0]);
+    const out = [];
+    let field = '', row = [], inQ = false, pend = false;
+    const fin = () => { row.push(field); field = ''; if (!(row.length === 1 && row[0] === '')) out.push(row); row = []; };
+    for (let i = 0; i < txt.length && out.length < max; i++) {
+      const ch = txt[i];
+      if (pend) { pend = false; if (ch === '"') { field += '"'; continue; } inQ = false; }
+      if (inQ) { if (ch === '"') pend = true; else field += ch; continue; }
+      if (ch === '"') inQ = true;
+      else if (ch === delim) { row.push(field); field = ''; }
+      else if (ch === '\n') fin();
+      else if (ch !== '\r') field += ch;
+    }
+    if (out.length < max && (field !== '' || row.length)) fin();
+    return out;
   }
 
   /**
@@ -75,7 +110,7 @@
     if (esExcel(file)) {
       let header = null, filas = 0;
       await RH.excelFilas.leer(file, {
-        hoja: h.hoja, columnasFecha: h.columnasFecha,
+        hoja: h.hoja, columnasFecha: h.columnasFecha, filaEncabezado: h.filaEncabezado || 0,
         alFila(r) {
           if (!header) { header = r.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
           filas++;
@@ -88,8 +123,10 @@
     const reader = file.stream().getReader();
     const dec = new TextDecoder('utf-8');
     let delim = null, field = '', row = [], inQ = false, pend = false, leidos = 0, filas = 0, header = null;
+    let saltar = h.filaEncabezado || 0;     // filas con contenido anteriores al encabezado (títulos del reporte)
     const emitir = r => {
       if (r.length === 1 && r[0] === '') return;
+      if (!header && saltar > 0) { saltar--; return; }
       if (!header) { header = r.map(c => c.replace(/^\uFEFF/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
       filas++;
       h.alFila(r, filas);
@@ -115,5 +152,5 @@
     return { filas, header };
   }
 
-  RH.csv = { splitLinea, detectarDelim, parseFecha, num, semana, encabezados, leer, DIA };
+  RH.csv = { splitLinea, detectarDelim, parseFecha, num, semana, encabezados, muestra, detectarEncabezado, esCantidad, leer, DIA };
 })(window.RH = window.RH || {});

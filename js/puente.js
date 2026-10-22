@@ -256,6 +256,24 @@
     return RH.excelFilas.encabezados(file, { hoja: selHoja.value });
   }
 
+  /**
+   * Lee los encabezados de un archivo. La fila del encabezado se detecta sola (los reportes suelen traer
+   * títulos antes) y se puede corregir en inpFila (1 = primera fila con contenido).
+   */
+  async function cargarEncabezados(file, selHoja, wrapHoja, inpFila) {
+    const excel = esExcel(file);
+    if (excel) await prepararExcel(file, selHoja, wrapHoja);
+    const hoja = excel ? selHoja.value : null;
+    const clave = [file.name, file.size, file.lastModified, hoja].join('|');
+    if (inpFila.dataset.clave !== clave) {
+      inpFila.value = RH.csv.detectarEncabezado(await RH.csv.muestra(file, { hoja, max: 60 })) + 1;
+      inpFila.dataset.clave = clave;
+    }
+    const fila = Math.max(1, Math.floor(+inpFila.value) || 1) - 1;
+    const cols = await RH.csv.encabezados(file, { hoja, filaEncabezado: fila });
+    return cols.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
+  }
+
   /** Si la configuración cambia después de procesar, el resultado ya no corresponde: se invalida */
   function invalidarAlCambiar(nodos, cb) {
     nodos.filter(Boolean).forEach(n => {
@@ -297,5 +315,5 @@
     return avisos;
   }
 
-  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, invalidarAlCambiar, avisosResultado, fueraDeRango, ultimaSemana, avisoSemanas, MAX_SEMANA };
+  RH.puente = { embebido, irA, desdeMapa, guardar, panelGuardar, actualizarTemporadas, enlazarTemporada, zonaArchivo, metaArchivo, esExcel, prepararExcel, cargarEncabezados, invalidarAlCambiar, avisosResultado, fueraDeRango, ultimaSemana, avisoSemanas, MAX_SEMANA };
 })(window.RH = window.RH || {});
