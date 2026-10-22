@@ -51,8 +51,7 @@
       <label class="fld">Temporada (etiqueta) <input id="temporada" placeholder="p. ej. 2027"></label>
       <label class="fld">Título del reporte <input id="titulo" value="Homeship Orders"></label>
       <label class="fld">Filtrar filas que contengan <input id="palabra" value="HOMESHIP"><span class="hint">Se aplica a la columna «filtro» de cada archivo; déjalo vacío para no filtrar.</span></label>
-      <label class="fld">College = valores de tipo que contengan <input id="gCollege" value="COLL"></label>
-      <label class="fld">Scholastic = valores de tipo que contengan <input id="gScholastic" value="GREG"><span class="hint">Varios valores separados por coma.</span></label>
+      <label class="fld">College = tipo que contenga <input id="gCollege" value="COLL, C"><span class="hint">Varios separados por coma. Una sola letra (C) significa «empieza con esa letra». Todo lo demás es Scholastic (GREG).</span></label>
       <label class="fld">Temporada anterior (ya guardada) <select id="previa"></select></label>
     </div>
     <div class="inline">Temporadas ya guardadas: <span class="chips" id="temporadas"></span></div>
@@ -98,7 +97,6 @@ const esc = RH.util.esc;
 const DATASET = 'comparativo-sy';
 const CAMPOS = ['env', 'abi'];
 const ARCH = { 1: { nombre: 'Shipped', informe: 'Shipments Report', campo: 'env' }, 2: { nombre: 'Open', informe: 'Open Orders Report', campo: 'abi' } };
-const GRUPOS = [{ id: 'COLLEGE', etiqueta: 'College', input: 'gCollege' }, { id: 'SCHOLASTIC', etiqueta: 'Scholastic', input: 'gScholastic' }];
 const NSEM = 52;
 const enc = { 1: [], 2: [] };
 let snapshotBase = null, ultimo = null, auditoria = null, procesando = false, cambioDurante = false;
@@ -194,8 +192,9 @@ async function procesarArchivos() {
   const inicio = Date.parse($('inicio').value), inicioIso = $('inicio').value;
   if (!(inicio > 0)) { $('estado').textContent = 'Escribe el lunes de la semana 1.'; return; }
   const PALABRA = $('palabra').value.trim().toUpperCase();
-  const grupos = GRUPOS.map(g => ({ id: g.id, claves: lista($(g.input).value) }));
-  if (grupos.some(g => !g.claves.length)) { $('estado').textContent = 'Escribe los valores de tipo de College y de Scholastic.'; return; }
+  const claves = lista($('gCollege').value);
+  if (!claves.length) { $('estado').textContent = 'Escribe los valores de tipo que cuentan como College.'; return; }
+  const esCollege = t => claves.some(c => c.length === 1 ? t.startsWith(c) : t.includes(c));
   archivos.forEach(a => { a.hoja = RH.puente.esExcel(a.file) ? $('hoja' + a.n).value : null; });
 
   ultimo = null; snapshotBase = null; matriz = null;
@@ -228,8 +227,7 @@ async function procesarArchivos() {
           e.unicas++;
           if (PALABRA && ix.filtro >= 0 && !String(row[ix.filtro] || '').toUpperCase().includes(PALABRA)) { e.fuera++; return; }
           const t = String(row[ix.tipo] || '').trim().toUpperCase();
-          const g = grupos.find(gr => gr.claves.some(c => t.includes(c)));
-          if (!g) { e.otros++; return; }
+          const g = { id: esCollege(t) ? 'COLLEGE' : 'SCHOLASTIC' };      // Scholastic (GREG) es todo lo demás
           const { semana, motivo } = RH.csv.semana(row[ix.fecha], inicio, a.fmt);
           const valor = ix.qty >= 0 ? RH.csv.num(row[ix.qty]) : 1;
           e.contadas++;
@@ -258,7 +256,7 @@ async function procesarArchivos() {
     meta: {
       reporte: DATASET, archivo: { nombre: archivos.map(a => a.file.name).join(' + '), tam: archivos.reduce((t, a) => t + a.file.size, 0), modificado: Math.max(...archivos.map(a => a.file.lastModified)), tipo: 'excel/csv', hoja: null },
       archivos: cfgArch, filas: est[1].contadas + est[2].contadas, fechasMalas: malas, antesDeInicio: antes,
-      config: { titulo: $('titulo').value.trim(), palabra: PALABRA, grupos: Object.fromEntries(grupos.map(g => [g.id, g.claves])), soloEnviada }
+      config: { titulo: $('titulo').value.trim(), palabra: PALABRA, college: claves, soloEnviada }
     }
   });
   snapshotBase = snap;
@@ -276,7 +274,7 @@ async function procesarArchivos() {
   const avisos = RH.puente.avisosResultado({ base: snap.meta.filas, antesDeInicio: antes, fechasMalas: malas, maxSemana: Math.max(0, ...semanasNum), maxEnRango: RH.puente.ultimaSemana(semanasNum), fuera: RH.puente.fueraDeRango(datos, 'env') });
   if (avisoExcel) avisos.unshift(avisoExcel);
   [1, 2].forEach(n => { if (est[n].sinId) avisos.push(est[n].sinId.toLocaleString() + ' fila(s) de ' + ARCH[n].nombre + ' sin número de orden quedaron fuera.'); });
-  [1, 2].forEach(n => { if (est[n].unicas && !est[n].contadas) avisos.push('Ninguna orden de ' + ARCH[n].nombre + ' coincide con el filtro y los tipos elegidos: revisa las columnas, la palabra del filtro y los valores de College / Scholastic.'); });
+  [1, 2].forEach(n => { if (est[n].unicas && !est[n].contadas) avisos.push('Ninguna orden de ' + ARCH[n].nombre + ' coincide con el filtro y los tipos elegidos: revisa las columnas y la palabra del filtro.'); });
   $('aviso').hidden = !avisos.length;
   $('aviso').textContent = avisos.length ? '⚠ ' + avisos.join(' ') : '';
   guardarUI.mostrar('Temporada ' + ($('temporada').value || '(sin etiqueta)') + ' · Semana 1 = ' + RH.util.fmtFecha(inicioIso) + ' · ' + (est[1].contadas + est[2].contadas).toLocaleString() + ' órdenes contadas (Shipped ' + est[1].contadas.toLocaleString() + ' + Open ' + est[2].contadas.toLocaleString() + ').');
@@ -475,7 +473,6 @@ function pintarAuditoria() {
     ['Órdenes de Open que también están en Shipped', f(e[2].enAmbos) + (document.getElementById('soloEnviada').checked ? ' (solo cuentan como Shipped)' : ' (cuentan en los dos)')],
     ['Órdenes únicas (Shipped / Open)', f(e[1].unicas) + ' / ' + f(e[2].unicas)],
     ['Fuera del filtro', f(e[1].fuera) + ' / ' + f(e[2].fuera)],
-    ['Con tipo distinto de College / Scholastic (no se cuentan)', f(e[1].otros) + ' / ' + f(e[2].otros)],
     ['Contadas (Shipped / Open)', f(e[1].contadas) + ' / ' + f(e[2].contadas)],
     ['De ellas en N/A (antes de la semana 1 o sin fecha)', f(e[1].na) + ' / ' + f(e[2].na)]
   ];
@@ -505,7 +502,7 @@ $('go').onclick = procesar;
 RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
 cargarPrevias();
 window.addEventListener('focus', () => { cargarPrevias().then(() => { if (snapshotBase) pintar(); }); });
-RH.puente.invalidarAlCambiar([$('cfgArchivos'), $('inicio'), $('palabra'), $('gCollege'), $('gScholastic'), $('soloEnviada')], () => {
+RH.puente.invalidarAlCambiar([$('cfgArchivos'), $('inicio'), $('palabra'), $('gCollege'), $('soloEnviada')], () => {
   if (procesando) { cambioDurante = true; return; }
   if (!ultimo) return;
   ultimo = null; guardarUI.ocultar();
