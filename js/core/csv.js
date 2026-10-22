@@ -61,10 +61,10 @@
   /** Lee solo los encabezados (en mayúsculas). Acepta CSV o Excel (.xlsx) */
   async function encabezados(file, opts) {
     opts = opts || {};
-    if (esExcel(file)) return (await RH.excelFilas.encabezados(file, opts)).map(c => String(c).trim().toUpperCase());
+    if (esExcel(file)) return (await RH.excelFilas.encabezados(file, opts)).map(c => String(c).replace(/\s+/g, " ").trim().toUpperCase());
     const filas = await muestra(file, { max: (opts.filaEncabezado || 0) + 1 });
     const f = filas[opts.filaEncabezado || 0] || [];
-    return f.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
+    return f.map(c => String(c).replace(/^\uFEFF/, '').replace(/\s+/g, " ").trim().toUpperCase());
   }
 
   /** Índice (entre las filas con contenido) de la fila de encabezado: la primera con muchos textos no numéricos */
@@ -76,8 +76,8 @@
     return i < 0 ? 0 : i;
   }
   /** ¿El nombre de la columna parece una cantidad? (QTY, QUANTITY, CANT, UNITS…) */
-  const esCantidad = nombre => /(^|[^A-Z])(QTY|QUANTITY|CANT|CANTIDAD|UNITS|UNIDADES|PCS|PIEZAS)([^A-Z]|$)|QTY$/i.test(String(nombre)) ||
-    /^(GOWN|TASSEL|CAP|STOLE|HOOD|CORD|MASCOT[ _-]?MEDAL)S?( ASSEMBLY| QTY)?$/i.test(String(nombre).trim());   // productos conocidos: GOWNS, Tassel Assembly…
+  const esProductoConocido = nombre => /^(GOWN|TASSEL|CAP|STOLE|HOOD|CORD|MASCOT[ _-]?MEDAL)S?( ASSEMBLY| QTY)?$/i.test(String(nombre).trim());
+  const esCantidad = nombre => /(^|[^A-Z])(QTY|QUANTITY|CANT|CANTIDAD|UNITS|UNIDADES|PCS|PIEZAS)([^A-Z]|$)|QTY$/i.test(String(nombre)) || esProductoConocido(nombre);   // productos conocidos: GOWNS, Tassel Assembly…
 
   /** Primeras filas con contenido (CSV o Excel), como textos, para detectar encabezado y columnas */
   async function muestra(file, opts) {
@@ -113,7 +113,7 @@
       await RH.excelFilas.leer(file, {
         hoja: h.hoja, columnasFecha: h.columnasFecha, filaEncabezado: h.filaEncabezado || 0,
         alFila(r) {
-          if (!header) { header = r.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
+          if (!header) { header = r.map(c => String(c).replace(/^\uFEFF/, '').replace(/\s+/g, " ").trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
           filas++;
           h.alFila(r, filas);
         },
@@ -128,7 +128,7 @@
     const emitir = r => {
       if (r.length === 1 && r[0] === '') return;
       if (!header && saltar > 0) { saltar--; return; }
-      if (!header) { header = r.map(c => c.replace(/^\uFEFF/, '').trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
+      if (!header) { header = r.map(c => c.replace(/^\uFEFF/, '').replace(/\s+/g, " ").trim().toUpperCase()); if (h.alEncabezado) h.alEncabezado(header); return; }
       filas++;
       h.alFila(r, filas);
     };
@@ -153,5 +153,5 @@
     return { filas, header };
   }
 
-  RH.csv = { splitLinea, detectarDelim, parseFecha, num, semana, encabezados, muestra, detectarEncabezado, esCantidad, leer, DIA };
+  RH.csv = { splitLinea, detectarDelim, parseFecha, num, semana, encabezados, muestra, detectarEncabezado, esCantidad, esProductoConocido, leer, DIA };
 })(window.RH = window.RH || {});

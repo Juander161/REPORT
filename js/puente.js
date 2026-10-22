@@ -271,7 +271,7 @@
     }
     const fila = Math.max(1, Math.floor(+inpFila.value) || 1) - 1;
     const cols = await RH.csv.encabezados(file, { hoja, filaEncabezado: fila });
-    return cols.map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
+    return cols.map(c => String(c).replace(/^\uFEFF/, '').replace(/\s+/g, " ").trim().toUpperCase());
   }
 
   /** Columnas cuyo contenido (primeras filas de datos) es numérico: candidatas a cantidad, sin depender del nombre */
@@ -279,7 +279,7 @@
     const hoja = esExcel(file) ? selHoja.value : null;
     const fila = Math.max(1, Math.floor(+inpFila.value) || 1) - 1;
     const filas = await RH.csv.muestra(file, { hoja, max: fila + 301 });
-    const cab = (filas[fila] || []).map(c => String(c).replace(/^\uFEFF/, '').trim().toUpperCase());
+    const cab = (filas[fila] || []).map(c => String(c).replace(/^\uFEFF/, '').replace(/\s+/g, " ").trim().toUpperCase());
     const ok = new Set();
     cab.forEach((nombre, i) => {
       let n = 0, num = 0;
