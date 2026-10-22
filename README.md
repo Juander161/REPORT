@@ -359,3 +359,6 @@ que la «Tabla del reporte» del dashboard, reconstruida desde lo guardado, sea 
 `reportes/comparativo-sy.html` replica el reporte «Imported Date comparison SY26 vs SY27»: Shipments Report (enviadas) + Open Orders Report (abiertas), órdenes únicas por número, College / Scholastic por semana (52 + «Previous Season» = N/A), temporada anterior tomada de lo guardado, totales, acumulados, deltas YOY y gráfica. Se copia a Excel o se descarga como .xlsx con fórmulas y gráfica nativa. Se guarda en el dashboard COMPARATIVO SY; la temporada guardada pasa a ser la «anterior» del año siguiente.
 
 En los reportes de 2 archivos, la fila del encabezado se detecta sola (títulos arriba del reporte) y se puede corregir; las columnas de cantidad se reconocen por QTY, QUANTITY, CANT, UNITS… y se pueden agregar otras a mano.
+
+### Tassels Only / Homeship con 2 archivos: mismas reglas que el reporte manual
+Columna de orden por defecto `ORACLE ORDER NUMBER`; las órdenes repetidas **entre** archivos se descartan (A1 manda) y las repetidas dentro de un mismo archivo solo si se marca la casilla; las filas sin número se cuentan; el tipo se agrupa en COLL / GREG (College si contiene COLLEGE o es C o COLL). Verificado contra `homeship_dos_archivos_3.html` con los mismos archivos: totales idénticos.

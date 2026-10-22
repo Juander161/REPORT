@@ -37,6 +37,11 @@
       <label class="fld">Temporada (etiqueta en el dashboard) <input id="temporada" placeholder="p. ej. 2026"></label>
       <label class="fld" id="palabraWrap" hidden>Palabra a buscar en el filtro <input id="palabra" value="HOMESHIP"></label>
     </div>
+    <div id="cfgReglas">
+    <label class="check"><input type="checkbox" id="dedupDentro"> Quitar también las órdenes repetidas dentro del mismo archivo (por defecto solo se quitan las que se repiten entre archivos)</label>
+    <label class="check"><input type="checkbox" id="agruparTipos" checked> Agrupar el tipo en COLL / GREG (College si el texto contiene COLLEGE o es C o COLL; todo lo demás es GREG)</label>
+    <label class="fld">Excepciones de tipo (opcional), una por línea, ej. DUAL=COLL <textarea id="equiv" rows="2" style="width:100%;max-width:320px"></textarea></label>
+    </div>
     <label class="check"><input type="checkbox" id="incluirCeros"> Contar como Tassels Only también las filas con todas las columnas objetivo en 0 (solo las demás en 0)</label>
     <div class="inline">Temporadas ya guardadas: <span class="chips" id="temporadas"></span></div>
   </section>
@@ -167,7 +172,7 @@ async function alElegirArchivo(n) {
     const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
     enc[n] = cols;
     numericas[n] = await RH.puente.columnasNumericas(f, $('hoja' + n), $('filaEnc' + n));
-    llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
+    llenar($('colId' + n), cols, [/^ORACLE ORDER NUMBER$/, /^ORDER (NUMBER|NUM|NO|ID)$/, /^(ORDER|ORDEN|PEDIDO|FOLIO)( (NUMBER|NUM|NO|ID))?$|^ID$/, /ORDER.*(NUMBER|NUM|NO\b|ID\b)|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
     llenar($('colFecha' + n), cols, [/^IMPORTED$/, /FECHA|DATE|IMPORTED/]);
     llenar($('colTipo' + n), cols, [/^ASSIGNMENT TYPE$/, /TYPE|TIPO/]);
     if (HS) llenar($('colFiltro' + n), cols, [/^SERVICE ORDER TYPE$/, /SERVICE|SERVICIO/]);
@@ -252,6 +257,11 @@ async function procesarArchivos() {
   $('resultados').hidden = true; $('auditoriaCard').hidden = true; $('copiar').disabled = true; guardarUI.ocultar();
 
   const orden = $('pref').value === '2' ? [2, 1] : [1, 2];
+  const quitarDentro = $('dedupDentro').checked, agrupar = $('agruparTipos').checked;
+  const equiv = {};
+  $('equiv').value.split(/\r?\n/).forEach(l => { const p = l.split('='); if (p.length === 2 && p[0].trim() && p[1].trim()) equiv[p[0].trim().toUpperCase()] = p[1].trim().toUpperCase(); });
+  // regla del reporte manual: College si contiene COLLEGE o es exactamente C o COLL; todo lo demás (GREG, SCHOLASTIC, vacío…) es GREG
+  const normalizarTipo = t => equiv[t] || (t === 'C' || t === 'COLL' || t.includes('COLLEGE') ? 'COLL' : 'GREG');
   const vistos = new Map(), idsDe = { 1: new Set(), 2: new Set() }, unicas = [];
   const est = { filas: { 1: 0, 2: 0 }, dupDentro: { 1: 0, 2: 0 }, dupEntre: 0, sinId: 0, unicasDe: { 1: 0, 2: 0 } };
   let avisoExcel = null;
@@ -271,16 +281,22 @@ async function procesarArchivos() {
         alFila(row) {
           est.filas[n]++;
           const id = normId(row[ix.id]);
-          if (id === '') { est.sinId++; return; }      // sin número no se puede identificar (igual que UNIQUE + XLOOKUP)
-          idsDe[n].add(id);
-          if (vistos.has(id)) { if (vistos.get(id) === n) est.dupDentro[n]++; else est.dupEntre++; return; }
-          vistos.set(id, n);
+          // como el reporte manual: sin número la fila se cuenta igual (no se puede comparar); las repetidas contra
+          // el otro archivo se descartan; las repetidas dentro del mismo archivo solo si se marca la casilla
+          if (id === '') est.sinId++;
+          else {
+            idsDe[n].add(id);
+            if (vistos.has(id)) {
+              if (vistos.get(id) !== n) { est.dupEntre++; return; }
+              if (quitarDentro) { est.dupDentro[n]++; return; }
+            } else vistos.set(id, n);
+          }
           est.unicasDe[n]++;
           const { semana, motivo } = RH.csv.semana(row[ix.fecha], inicio, a.fmt);
           let obj = 0; for (const i of ix.obj) obj += RH.csv.num(row[i]);
           let hayOtros = false; for (const i of ix.cero) { if (RH.csv.num(row[i]) !== 0) { hayOtros = true; break; } }
           const valorFiltro = HS ? (row[ix.filtro] || '').trim() : '';
-          unicas.push({ id, n, fechaTxt: row[ix.fecha], semana, motivo, tipo: (row[ix.tipo] || '').trim().toUpperCase() || '(VACÍO)', valorFiltro, obj, hayOtros });
+          unicas.push({ id, n, fechaTxt: row[ix.fecha], semana, motivo, tipo: agrupar ? normalizarTipo((row[ix.tipo] || '').trim().toUpperCase()) : ((row[ix.tipo] || '').trim().toUpperCase() || '(VACÍO)'), valorFiltro, obj, hayOtros });
         },
         alProgreso(leidos, total) {
           $('estado').textContent = 'Leyendo ' + NOMBRE_ARCH[n] + '… ' + Math.round(total ? leidos / total * 100 : 100) + ' %';
@@ -321,7 +337,7 @@ async function procesarArchivos() {
       reporte: R, archivo: { nombre: nombreArch, tam: sumaTam, modificado: Math.max(...archivos.map(a => a.file.lastModified)), tipo: 'excel/csv', hoja: null },
       archivos: cfgArch, filas: unicas.length, fechasMalas: malas, antesDeInicio: antes,
       dosArchivos: { unicas: unicas.length, duplicadasEntreArchivos: est.dupEntre, duplicadasDentro: est.dupDentro, sinNumero: est.sinId, prioridad: NOMBRE_ARCH[orden[0]] },
-      config: Object.assign({ colFecha: archivos[0].fecha, colTipo: archivos[0].tipo, fmt: archivos[0].fmt, roles, objetivo: Object.keys(roles).filter(k => roles[k] === 'obj') },
+      config: Object.assign({ agruparTipos: agrupar, quitarDentro, colFecha: archivos[0].fecha, colTipo: archivos[0].tipo, fmt: archivos[0].fmt, roles, objetivo: Object.keys(roles).filter(k => roles[k] === 'obj') },
         HS ? { colFiltro: archivos[0].filtro, palabra: PALABRA } : {})
     }, HS ? { coinciden } : {})
   });
@@ -341,7 +357,7 @@ async function procesarArchivos() {
   const semanasNum = [...datos.keys()].filter(k => k !== 'N/A');
   const avisos = RH.puente.avisosResultado({ base: HS ? coinciden : unicas.length, antesDeInicio: antes, fechasMalas: malas, maxSemana: Math.max(0, ...semanasNum), maxEnRango: RH.puente.ultimaSemana(semanasNum), fuera: RH.puente.fueraDeRango(datos, CAMPOS[0]) });
   if (avisoExcel) avisos.unshift(avisoExcel);
-  if (est.sinId) avisos.push(est.sinId.toLocaleString() + ' fila(s) sin número de orden quedaron fuera (no se pueden identificar).');
+  if (est.sinId) avisos.push(est.sinId.toLocaleString() + ' fila(s) sin número de orden: se contaron, pero no se pueden comparar contra el otro archivo.' + (est.sinId > 0.3 * (est.filas[1] + est.filas[2]) ? ' Es una parte grande de las filas: revisa que la columna del número de orden sea la correcta.' : ''));
   if (!est.dupEntre) avisos.push('Ninguna orden aparece en los dos archivos: revisa que las columnas del número de orden sean las correctas.');
   activas.forEach(q => [1, 2].forEach(n => { if (!(n === 1 ? q.c1 : q.c2) && q.rol === 'obj') avisos.push('«' + q.nombre + '» (Objetivo) no tiene columna en ' + NOMBRE_ARCH[n] + ': las órdenes de ' + NOMBRE_ARCH[n] + ' valen 0 en esa columna.'); }));
   $('aviso').hidden = !avisos.length;
@@ -374,7 +390,7 @@ function pintarAuditoria() {
     ['Órdenes que están en los dos archivos', f(ambos)],
     ['Órdenes únicas (= cantidad de filas de UNIQUE(VSTACK(A1; A2)))', f(vistos.size)],
     ['Repetidas dentro del mismo archivo (A1 / A2)', f(est.dupDentro[1]) + ' / ' + f(est.dupDentro[2])],
-    ['Filas sin número de orden (excluidas)', f(est.sinId)],
+    ['Filas sin número de orden (se cuentan, sin comparar)', f(est.sinId)],
     ['Órdenes únicas tomadas de A1 / de A2', f(est.unicasDe[1]) + ' / ' + f(est.unicasDe[2])],
     [(HS ? 'Con la palabra en el filtro' : 'Órdenes consideradas') + ' (A1 / A2)', f(porArch[1].coinciden) + ' / ' + f(porArch[2].coinciden)],
     ['Tassels Only (A1 / A2)', f(porArch[1].to) + ' / ' + f(porArch[2].to)],
@@ -427,7 +443,7 @@ $('go').onclick = procesar;
 $('copiar').onclick = async () => { await RH.util.copiarTexto(tsv); RH.util.toast('Tabla copiada.', { tipo: 'ok' }); };
 RH.puente.enlazarTemporada($('inicio'), $('temporada'), $('inicioInfo'));
 // si cambia algo que afecta el cálculo después de procesar, el resultado ya no se puede guardar
-RH.puente.invalidarAlCambiar([$('cfgArchivos'), $('pref'), $('inicio'), $('palabra'), $('cfgCols')], () => {
+RH.puente.invalidarAlCambiar([$('cfgArchivos'), $('pref'), $('inicio'), $('palabra'), $('cfgCols'), $('cfgReglas')], () => {
   if (procesando) { cambioDurante = true; return; }
   if (!ultimo) return;
   ultimo = null; guardarUI.ocultar();
