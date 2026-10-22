@@ -104,7 +104,7 @@ let qtys = [];                    // [{nombre, rol, c1, c2}]
 let auditoria = null, resultado = null, snapshotBase = null;
 let ultimo = null, procesando = false, cambioDurante = false, tsv = '';
 
-const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT)$/, '').replace(/[^A-Z0-9]/g, '').replace(/S$/, '');
+const norm = s => String(s).toUpperCase().replace(/\s+(QTY|QUANTITY|CANTIDAD|CANT|ASSEMBLY)$/, '').replace(/[^A-Z0-9]/g, '').replace(/S$/, '');
 const rolPorDefecto = nombre => OBJETIVO_DEFECTO.includes(norm(nombre)) ? 'obj' : 'cero';
 function normId(v) {
   const t = String(v == null ? '' : v).trim().replace(/,/g, '');
