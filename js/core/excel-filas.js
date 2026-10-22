@@ -505,7 +505,7 @@
     const ss = await cadenasCompartidas(file, lib, cuenta);
     const estilos = await estilosFecha(file, lib);
     const hoja = elegirHoja(lib, opts.hoja);
-    const nombresFecha = new Set((opts.columnasFecha || []).map(n => String(n).trim().toUpperCase()));
+    const nombresFecha = new Set((opts.columnasFecha || []).map(n => String(n).replace(/\s+/g, " ").trim().toUpperCase()));
     const ctx = { ss, d1904: lib.d1904, fechas: null, estilos, cuenta: { serie: 0, texto: 0, numero: 0 } };
     let fechas = null, ancho = 0;
     let saltar = opts.filaEncabezado || 0;      // filas con contenido anteriores al encabezado (títulos del reporte)
@@ -523,7 +523,7 @@
       if (!fechas) {
         fechas = new Set();
         ancho = fila.length;
-        fila.forEach((c, i) => { if (nombresFecha.has(String(c).replace(/^\uFEFF/, '').trim().toUpperCase())) fechas.add(i); });
+        fila.forEach((c, i) => { if (nombresFecha.has(String(c).replace(/^\uFEFF/, '').replace(/\s+/g, " ").trim().toUpperCase())) fechas.add(i); });
         ctx.fechas = fechas;
       } else {
         for (; enBlanco > 0; enBlanco--) opts.alFila(new Array(ancho).fill(''));
