@@ -128,8 +128,8 @@
       congelar(filas, cols) { h.congeladas = { filas: filas || 0, cols: cols || 0 }; return h; },
       /** Escala de color (formato condicional) sobre un rango; colores 'RRGGBB' */
       escala(r1, c1, r2, c2, min, max, medio) { h.escalas.push({ ref: ref(c1, r1) + ':' + ref(c2, r2), min, max, medio }); return h; },
-      /** g: { tipo:'col'|'bar'|'line'|'colStacked'|'colDiverging', titulo, categorias[], cat:{c,r1,r2},
-              series:[{nombre, nombreRef:{c,r}, c, r1, r2, color:'RRGGBB', valores[]}],
+      /** g: { tipo:'col'|'bar'|'line'|'colStacked'|'colDiverging', titulo, categorias[], cat:{c,r1,r2} | {fila,c1,c2},
+              series:[{nombre, nombreRef:{c,r}, c, r1, r2 | fila, c1, c2, color:'RRGGBB', valores[]}],
               formatoEje, formatoCache, ancla:{c,r,w,h} } */
       grafica(g) { h.graficas.push(g); return h; },
       get siguiente() { return h.filas.length; }
@@ -223,6 +223,7 @@
     const abs = (c, r) => '$' + col(c) + '$' + (r + 1);
     const rango = (c, r1, r2) => q + '!' + abs(c, r1) + ':' + abs(c, r2);
     const celda = (c, r) => q + '!' + abs(c, r);
+    const rangoFila = (r, c1, c2) => q + '!' + abs(c1, r) + ':' + abs(c2, r);      // rango horizontal (series en fila)
     const strCache = arr => '<c:strCache><c:ptCount val="' + arr.length + '"/>' +
       arr.map((v, i) => '<c:pt idx="' + i + '"><c:v>' + x(v) + '</c:v></c:pt>').join('') + '</c:strCache>';
     const numCache = arr => '<c:numCache><c:formatCode>' + x(g.formatoCache || 'General') + '</c:formatCode><c:ptCount val="' + arr.length + '"/>' +
@@ -236,8 +237,8 @@
       const sp = linea
         ? '<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="' + s.color + '"/></a:solidFill><a:round/></a:ln></c:spPr><c:marker><c:symbol val="none"/></c:marker>'
         : '<c:spPr><a:solidFill><a:srgbClr val="' + s.color + '"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr><c:invertIfNegative val="0"/>';
-      const cat = '<c:cat><c:strRef><c:f>' + x(rango(g.cat.c, g.cat.r1, g.cat.r2)) + '</c:f>' + strCache(g.categorias) + '</c:strRef></c:cat>';
-      const val = '<c:val><c:numRef><c:f>' + x(rango(s.c, s.r1, s.r2)) + '</c:f>' + numCache(s.valores) + '</c:numRef></c:val>';
+      const cat = '<c:cat><c:strRef><c:f>' + x(g.cat.fila != null ? rangoFila(g.cat.fila, g.cat.c1, g.cat.c2) : rango(g.cat.c, g.cat.r1, g.cat.r2)) + '</c:f>' + strCache(g.categorias) + '</c:strRef></c:cat>';
+      const val = '<c:val><c:numRef><c:f>' + x(s.fila != null ? rangoFila(s.fila, s.c1, s.c2) : rango(s.c, s.r1, s.r2)) + '</c:f>' + numCache(s.valores) + '</c:numRef></c:val>';
       return '<c:ser><c:idx val="' + i + '"/><c:order val="' + i + '"/>' + tx + sp + cat + val + (linea ? '<c:smooth val="0"/>' : '') + '</c:ser>';
     }).join('');
 

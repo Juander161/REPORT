@@ -15,7 +15,7 @@
   const conCeros = (c, o) => (c.to || 0) + (o.incluirCeros ? (c.ceros || 0) : 0);
 
   RH.registro = {
-    app: { nombre: 'Report Hub', version: '1.9.0' },
+    app: { nombre: 'Report Hub', version: '1.10.0' },
 
     dashboards: [
       {
@@ -62,6 +62,24 @@
         opciones: [],
         metricas: [{ id: 'valor', etiqueta: 'Cantidad', unidad: 'unidades', num: c => c.v || 0 }],
         principal: 'valor'
+      },
+      {
+        id: 'comparativo-sy',
+        titulo: 'COMPARATIVO SY',
+        dataset: 'comparativo-sy',
+        reporte: 'comparativo-sy',
+        estado: 'activo',
+        descripcion: 'Órdenes por semana de importación, College y Scholastic, enviadas (Shipped) y abiertas (Open), contra la temporada anterior.',
+        campos: { env: 'Enviadas (Shipped)', abi: 'Abiertas (Open)' },
+        opciones: [],
+        metricas: [
+          { id: 'total', etiqueta: 'Total (Shipped + Open)', unidad: 'órdenes', num: c => (c.env || 0) + (c.abi || 0) },
+          { id: 'env', etiqueta: 'Enviadas (Shipped)', unidad: 'órdenes', num: c => c.env || 0 },
+          { id: 'abi', etiqueta: 'Abiertas (Open)', unidad: 'órdenes', num: c => c.abi || 0 },
+          { id: 'share', etiqueta: '% enviadas', tipo: 'ratio', descripcion: 'Enviadas ÷ (Shipped + Open)', num: c => c.env || 0, den: c => (c.env || 0) + (c.abi || 0) }
+        ],
+        principal: 'total',
+        participacion: 'share'
       },
       {
         id: 'homeship',
@@ -123,6 +141,13 @@
         archivo: 'reportes/gowns-activas.html',
         dashboard: 'gowns-activas',
         descripcion: 'Toma dos archivos de órdenes activas (A1 y A2), cuenta cada orden una sola vez por su número y calcula cantidades u órdenes por producto, semana y tipo.'
+      },
+      {
+        id: 'comparativo-sy',
+        titulo: 'Comparativo SY (Shipped + Open)',
+        archivo: 'reportes/comparativo-sy.html',
+        dashboard: 'comparativo-sy',
+        descripcion: 'Réplica del reporte «Imported Date comparison»: Shipments Report + Open Orders Report, College y Scholastic por semana contra la temporada anterior, con diferencias y gráfica; copia a Excel o descarga .xlsx.'
       },
       {
         id: 'homeship',
