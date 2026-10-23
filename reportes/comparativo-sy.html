@@ -151,7 +151,7 @@ async function alElegirArchivo(n) {
   try {
     const cols = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
     enc[n] = cols;
-    llenar($('colId' + n), cols, [/ORDER.*(NUMBER|NUM|NO|ID)|^ID$|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
+    llenar($('colId' + n), cols, [/^ORACLE ORDER NUMBER$/, /^ORDER (NUMBER|NUM|NO|ID)$/, /^(ORDER|ORDEN|PEDIDO|FOLIO)( (NUMBER|NUM|NO|ID))?$|^ID$/, /ORDER.*(NUMBER|NUM|NO\b|ID\b)|ORDEN|PEDIDO|FOLIO/, /NUMBER|NUM|ID\b/]);
     llenar($('colFecha' + n), cols, [/^IMPORTED( DATE)?$/, /IMPORTED/, /FECHA|DATE/]);
     llenar($('colTipo' + n), cols, [/^ASSIGNMENT TYPE$/, /TYPE|TIPO/]);
     llenar($('colFiltro' + n), cols, [/^SERVICE ORDER TYPE$/, /SERVICE|SERVICIO/], '(sin filtro)');
