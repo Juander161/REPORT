@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Órdenes únicas · 2 archivos · Report Hub</title>
+<link rel="icon" href="../icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="reporte.css">
+<script>try { var t = JSON.parse(localStorage.getItem('rh-tema') || '"auto"'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+<style>
+  .u-wrap table { font-size: 12.5px; }
+  .u-wrap th, .u-wrap td { white-space: nowrap; padding: 4px 8px; text-align: left; }
+  .u-wrap td.n { text-align: right; }
+  .map-tabla select { min-width: 190px; }
+</style>
+</head>
+<body>
+<div class="rp">
+  <header class="rp-head">
+    <div>
+      <div class="eyebrow">Reporte · base común de los reportes de 2 archivos</div>
+      <h1>Órdenes únicas (2 archivos)</h1>
+      <p>Une los dos archivos en una sola tabla con una fila por orden: igual que <code>UNIQUE(VSTACK(A1; A2))</code> para identificar las órdenes únicas y <code>IFERROR(XLOOKUP(…); XLOOKUP(…))</code> para traer los datos de cada orden del archivo donde esté (si un dato solo existe en uno de los archivos, se toma de ese). Después se agrega la semana de cada orden.</p>
+    </div>
+    <a class="btn ghost solo-suelto" href="../index.html">← Ir al panel</a>
+  </header>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">1</span> Archivos</h2>
+    <div class="dos-col" id="cfgArchivos"></div>
+    <div class="form-grid">
+      <label class="fld">Si una orden está en los dos archivos, tomar sus datos primero de
+        <select id="pref"><option value="1">A1</option><option value="2">A2</option></select>
+        <span class="hint">Es el orden de los XLOOKUP: si el dato no está o no existe en ese archivo, se busca en el otro.</span></label>
+      <label class="fld">Lunes de la Semana 1 <input type="date" id="inicio" value="2026-06-29"><span class="hint" id="inicioInfo"></span></label>
+    </div>
+  </section>
+
+  <section class="card" id="cfgCols">
+    <h2 class="step-h"><span class="step-n">2</span> Equivalencia de columnas</h2>
+    <p class="muted">Cada columna de la tabla final y cómo se llama en cada archivo. Se proponen solas por el nombre; «— no existe —» equivale al N/A de tu lista (en ese archivo no se busca).</p>
+    <div class="table-wrap"><table class="tbl-cfg map-tabla" id="mapTabla"></table></div>
+  </section>
+
+  <section class="card">
+    <h2 class="step-h"><span class="step-n">3</span> Procesar</h2>
+    <div class="actions">
+      <button id="go" class="btn primary lg" type="button">Crear tabla unificada</button>
+      <button id="copiar" class="btn" type="button" disabled>Copiar tabla (para pegar en Excel)</button>
+      <button id="csv" class="btn" type="button" disabled>Descargar CSV</button>
+      <button id="excel" class="btn" type="button" disabled>Descargar Excel (.xlsx)</button>
+    </div>
+    <div class="progress" id="progreso" hidden><div></div></div>
+    <div id="estado"></div>
+    <div id="aviso" class="aviso" hidden></div>
+    <div id="usado" class="usado"></div>
+  </section>
+
+  <section class="card" id="resultados" hidden>
+    <p class="concilia" id="concilia"></p>
+    <div id="salida" class="table-wrap u-wrap"></div>
+  </section>
+
+  <section class="card" id="auditoriaCard" hidden>
+    <h2 class="step-h"><span class="step-n">✓</span> Auditoría</h2>
+    <div class="table-wrap"><table class="tbl-cfg" id="audConteos"></table></div>
+  </section>
+</div>
+
+<script src="../js/core/util.js"></script>
+<script src="../js/core/zip.js"></script>
+<script src="../js/core/xlsx.js"></script>
+<script src="../js/core/store.js"></script>
+<script src="../js/core/excel-filas.js"></script>
+<script src="../js/core/csv.js"></script>
+<script src="../js/registry.js"></script>
+<script src="../js/puente.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = RH.util.esc;
+const NOMBRE_ARCH = { 1: 'A1', 2: 'A2' };
+const SALIDA = ['WEEKS', 'ORDER NUMBER', 'ENTERED', 'REP TYPE', 'GOWNS', 'SO TYPE', 'TASSELS', 'MASCOT MEDALS', 'STOLES', 'CORDS', 'HOODS', 'CAPS'];
+const PRODUCTOS = new Set(['GOWNS', 'TASSELS', 'MASCOT MEDALS', 'STOLES', 'CORDS', 'HOODS', 'CAPS']);
+// columnas de la tabla que se buscan en los archivos (WEEKS se calcula) y los nombres con que suelen venir
+const CAMPOS = [
+  { k: 'ORDER NUMBER', alias: [/^ORACLE ORDER NUMBER$/, /^ORDER (NUMBER|NUM|NO|ID)$/, /^(ORDER|ORDEN|PEDIDO|FOLIO)$/, /ORDER.*(NUMBER|NUM|NO\b|ID\b)|ORDEN|PEDIDO|FOLIO/] },
+  { k: 'ENTERED', alias: [/^ENTERED$/, /^ENTERED( DATE)?$/, /^IMPORTED( DATE)?$/, /ENTERED|IMPORT|ORDER DATE|FECHA/] },
+  { k: 'REP TYPE', alias: [/^CUSTOMER CLASSIFICATION$/, /^REP TYPE$/, /^ASSIGNMENT TYPE$/, /CLASSIFICATION|REP.?TYPE|ASSIGNMENT/] },
+  { k: 'GOWNS', alias: [/^GOWN ASSEMBLY$/, /^GOWNS?$/, /^GOWNS? QTY$/, /\bGOWN/] },
+  { k: 'SO TYPE', alias: [/^SERVICE ORDER TYPE$/, /^SO TYPE$/, /SERVICE.*TYPE|SO.?TYPE/] },
+  { k: 'TASSELS', alias: [/^TASSEL ASSEMBLY$/, /^TASSELS?$/, /^TASSELS? QTY$/, /\bTASSEL/] },
+  { k: 'MASCOT MEDALS', alias: [/^MASCOT MEDALS?( ASSEMBLY| QTY)?$/, /MASCOT/] },
+  { k: 'STOLES', alias: [/^STOLE ASSEMBLY$/, /^STOLES?$/, /^STOLES? QTY$/, /\bSTOLE/] },
+  { k: 'CORDS', alias: [/^CORDS?( ASSEMBLY| QTY)?$/, /\bCORD/] },
+  { k: 'HOODS', alias: [/^HOOD ASSEMBLY$/, /^HOODS?$/, /^HOODS? QTY$/, /\bHOOD/] },
+  { k: 'CAPS', alias: [/^CAP ASSEMBLY$/, /^CAPS?$/, /^CAPS? QTY$/, /\bCAPS?\b/] }
+];
+const enc = { 1: [], 2: [] };
+const eleccion = { 1: {}, 2: {} };      // campo → nombre de columna elegido en cada archivo
+let filas = [], tsvCache = null, procesando = false, cambioDurante = false;
+
+function normId(v) {
+  const t = String(v == null ? '' : v).trim().replace(/,/g, '');
+  if (t === '') return '';
+  const n = Number(t);
+  return isFinite(n) ? String(n) : t.toUpperCase();
+}
+
+// ---------- tarjetas de archivo
+function armarArchivos() {
+  $('cfgArchivos').innerHTML = [1, 2].map(n => `
+    <div class="arch">
+      <h3 class="arch-t">Archivo ${NOMBRE_ARCH[n]}</h3>
+      <label class="drop" id="zona${n}">
+        <span class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span><strong>CSV o Excel (.xlsx) de ${NOMBRE_ARCH[n]}</strong><small id="archivoInfo${n}">Se procesa en tu computadora.</small></span>
+        <input type="file" id="archivo${n}" accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </label>
+      <label class="fld fld-hoja" id="hojaWrap${n}" hidden>Hoja del libro <select id="hoja${n}"></select></label>
+      <div class="form-grid">
+        <label class="fld">Fila del encabezado <input type="number" min="1" id="filaEnc${n}" value="1" style="width:90px"><span class="hint">Se detecta sola; cámbiala si el reporte trae títulos arriba.</span></label>
+        <label class="fld">Formato de fecha (si es texto)
+          <select id="fmt${n}"><option value="MDY">Mes/Día/Año</option><option value="DMY">Día/Mes/Año</option></select></label>
+      </div>
+    </div>`).join('');
+  [1, 2].forEach(n => {
+    RH.puente.zonaArchivo($('zona' + n), $('archivo' + n), $('archivoInfo' + n));
+    $('archivo' + n).addEventListener('change', () => alElegirArchivo(n));
+    $('hoja' + n).addEventListener('change', () => alElegirArchivo(n));
+    $('filaEnc' + n).addEventListener('change', () => alElegirArchivo(n));
+  });
+}
+
+function adivinar(cols, campo) {
+  for (const re of campo.alias) { const hit = cols.find(c => re.test(c)); if (hit) return hit; }
+  return '';
+}
+
+async function alElegirArchivo(n) {
+  const f = $('archivo' + n).files[0];
+  $('hojaWrap' + n).hidden = true;
+  if (!f) { enc[n] = []; pintarMapa(); return; }
+  try {
+    enc[n] = await RH.puente.cargarEncabezados(f, $('hoja' + n), $('hojaWrap' + n), $('filaEnc' + n));
+    CAMPOS.forEach(c => {
+      const previa = eleccion[n][c.k];
+      eleccion[n][c.k] = previa !== undefined && (previa === '' || enc[n].includes(previa)) ? previa : adivinar(enc[n], c);
+    });
+    $('estado').textContent = '';
+    pintarMapa();
+  } catch (e) {
+    $('estado').textContent = 'No pude leer el encabezado de ' + NOMBRE_ARCH[n] + ': ' + e.message;
+  }
+}
+
+function pintarMapa() {
+  const t = $('mapTabla');
+  if (!enc[1].length && !enc[2].length) { t.innerHTML = '<tr><td class="muted">Elige los archivos para ver sus columnas.</td></tr>'; return; }
+  const opciones = n => '<option value="">— no existe —</option>' + enc[n].map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+  t.innerHTML = '<tr><th>Columna de la tabla</th><th>En A1</th><th>En A2</th></tr>' +
+    '<tr><td><strong>WEEKS</strong></td><td colspan="2" class="muted">Se calcula con la fecha ENTERED y el lunes de la semana 1 («N/A» si es anterior).</td></tr>' +
+    CAMPOS.map(c => '<tr><td><strong>' + c.k + '</strong></td>' +
+      [1, 2].map(n => '<td><select data-n="' + n + '" data-k="' + c.k + '">' + opciones(n) + '</select></td>').join('') + '</tr>').join('');
+  t.querySelectorAll('select').forEach(s => { s.value = eleccion[+s.dataset.n][s.dataset.k] || ''; });
+}
+$('mapTabla').addEventListener('change', ev => { const s = ev.target.closest('select[data-k]'); if (s) eleccion[+s.dataset.n][s.dataset.k] = s.value; });
+
+// ---------- procesar
+async function procesar() {
+  procesando = true; cambioDurante = false;
+  try { await procesarArchivos(); } finally { procesando = false; }
+}
+
+async function procesarArchivos() {
+  const archivos = [1, 2].map(n => ({ n, file: $('archivo' + n).files[0], fmt: $('fmt' + n).value, filaEnc: Math.max(1, Math.floor(+$('filaEnc' + n).value) || 1) - 1, hoja: null, col: eleccion[n] }));
+  if (archivos.some(a => !a.file)) { $('estado').textContent = 'Elige los dos archivos (A1 y A2).'; return; }
+  if (archivos.some(a => !a.col['ORDER NUMBER'])) { $('estado').textContent = 'Elige la columna ORDER NUMBER en los dos archivos.'; return; }
+  const inicio = Date.parse($('inicio').value);
+  if (!(inicio > 0)) { $('estado').textContent = 'Escribe el lunes de la semana 1.'; return; }
+  archivos.forEach(a => { a.hoja = RH.puente.esExcel(a.file) ? $('hoja' + a.n).value : null; });
+
+  filas = []; tsvCache = null;
+  $('go').disabled = true; $('progreso').hidden = false; $('aviso').hidden = true; $('usado').textContent = '';
+  $('resultados').hidden = true; $('auditoriaCard').hidden = true;
+  ['copiar', 'csv', 'excel'].forEach(id => { $(id).disabled = true; });
+
+  const campos = CAMPOS.map(c => c.k).filter(k => k !== 'ORDER NUMBER');
+  const datosDe = { 1: new Map(), 2: new Map() };      // id → valores de los campos (la primera aparición en cada archivo, como XLOOKUP)
+  const orden = [];                                    // ids únicos en el orden de VSTACK(A1; A2)
+  const vistos = new Set();
+  const est = { 1: { filas: 0, sinId: 0, dup: 0, ids: 0 }, 2: { filas: 0, sinId: 0, dup: 0, ids: 0 } };
+  const idxDe = { 1: {}, 2: {} };
+  let avisoExcel = null;
+  try {
+    for (const a of archivos) {
+      const n = a.n, e = est[n], ix = idxDe[n];
+      const r = await RH.csv.leer(a.file, {
+        hoja: a.hoja, columnasFecha: [a.col['ENTERED']].filter(Boolean), filaEncabezado: a.filaEnc,
+        alEncabezado(h) {
+          ix.id = h.indexOf(a.col['ORDER NUMBER']);
+          if (ix.id < 0) throw new Error('En ' + NOMBRE_ARCH[n] + ' no encontré la columna ' + a.col['ORDER NUMBER'] + '.');
+          campos.forEach(k => { const c = a.col[k]; ix[k] = c ? h.indexOf(c) : -1; if (c && ix[k] < 0) throw new Error('En ' + NOMBRE_ARCH[n] + ' no encontré la columna ' + c + '.'); });
+        },
+        alFila(row) {
+          e.filas++;
+          const id = normId(row[ix.id]);
+          if (id === '') { e.sinId++; return; }
+          if (datosDe[n].has(id)) { e.dup++; return; }          // XLOOKUP devuelve la primera coincidencia
+          e.ids++;
+          datosDe[n].set(id, campos.map(k => ix[k] >= 0 ? row[ix[k]] : undefined));
+          if (!vistos.has(id)) { vistos.add(id); orden.push(id); }
+        },
+        alProgreso(leidos, total) {
+          $('estado').textContent = 'Leyendo ' + NOMBRE_ARCH[n] + '… ' + Math.round(total ? leidos / total * 100 : 100) + ' %';
+          $('progreso').firstElementChild.style.width = (total ? Math.min(100, leidos / total * 100) : 100).toFixed(1) + '%';
+        }
+      });
+      if (r.aviso) avisoExcel = (avisoExcel ? avisoExcel + ' ' : '') + NOMBRE_ARCH[n] + ': ' + r.aviso;
+    }
+  } catch (err) {
+    $('estado').textContent = 'Error: ' + err.message;
+    $('go').disabled = false; $('progreso').hidden = true;
+    return;
+  }
+
+  // los XLOOKUP: primero el archivo de prioridad, si no está (o no tiene esa columna) el otro
+  const prio = $('pref').value === '2' ? [2, 1] : [1, 2];
+  const hayCol = k => archivos.some(a => a.col[k]);
+  const ent = campos.indexOf('ENTERED');
+  let enAmbos = 0, soloDe = { 1: 0, 2: 0 }, antes = 0, malas = 0, sinFecha = 0;
+  for (const id of orden) {
+    const en1 = datosDe[1].has(id), en2 = datosDe[2].has(id);
+    if (en1 && en2) enAmbos++; else soloDe[en1 ? 1 : 2]++;
+    const vals = {}; let origenEntered = prio[0];
+    campos.forEach((k, j) => {
+      for (const n of prio) {
+        const reg = datosDe[n].get(id);
+        if (!reg || !archivos[n - 1].col[k]) continue;
+        vals[k] = reg[j];
+        if (k === 'ENTERED') origenEntered = n;
+        return;
+      }
+    });
+    const f = vals['ENTERED'];
+    const { semana, motivo } = f === undefined ? { semana: 'N/A', motivo: 'sin-fecha' } : RH.csv.semana(f, inicio, archivos[origenEntered - 1].fmt);
+    if (semana === 'N/A') { if (motivo === 'sin-fecha') malas++; else antes++; }
+    const fila = [semana === 'N/A' ? 'N/A' : 'Semana ' + semana, id];
+    campos.forEach(k => {
+      const v = vals[k];
+      if (PRODUCTOS.has(k)) fila.push(v === undefined ? (hayCol(k) ? 0 : '') : (String(v).trim() === '' ? 0 : (isFinite(RH.csv.num(v)) && /^[-+]?[\d,]*\.?\d+$/.test(String(v).trim()) ? RH.csv.num(v) : String(v).trim())));
+      else fila.push(v === undefined ? '' : String(v).trim());
+    });
+    filas.push(fila);
+  }
+  void ent; void sinFecha;
+
+  const nombres = archivos.map(a => a.file.name).join(' + ');
+  $('estado').textContent = 'Listo. Órdenes únicas: ' + filas.length.toLocaleString() + ' (A1 ' + est[1].ids.toLocaleString() + ' + A2 ' + est[2].ids.toLocaleString() + ' − en los dos ' + enAmbos.toLocaleString() + ')';
+  $('go').disabled = false; $('progreso').firstElementChild.style.width = '100%';
+  $('usado').textContent = 'Calculado con: Lunes de la Semana 1 = ' + $('inicio').value + ' · ' + nombres + ' · datos primero de ' + NOMBRE_ARCH[prio[0]];
+  pintar(); pintarAuditoria({ est, enAmbos, soloDe, antes, malas });
+  if (cambioDurante) { $('aviso').hidden = false; $('aviso').textContent = 'La configuración cambió mientras se procesaba: vuelve a crear la tabla.'; return; }
+  const avisos = [];
+  if (avisoExcel) avisos.push(avisoExcel);
+  [1, 2].forEach(n => { if (est[n].sinId) avisos.push(est[n].sinId.toLocaleString() + ' fila(s) de ' + NOMBRE_ARCH[n] + ' sin número de orden quedaron fuera (UNIQUE + XLOOKUP no las puede identificar).'); });
+  if (!enAmbos) avisos.push('Ninguna orden aparece en los dos archivos: revisa que ORDER NUMBER sea la columna correcta en cada uno.');
+  if (antes + malas > filas.length * 0.3) avisos.push('Más del 30 % de las órdenes quedó en N/A: ¿el lunes de la semana 1 corresponde a estos archivos?');
+  if (!filas.length) avisos.push('No quedó ninguna orden: revisa la fila del encabezado y la columna ORDER NUMBER.');
+  $('aviso').hidden = !avisos.length;
+  $('aviso').textContent = avisos.length ? '⚠ ' + avisos.join(' ') : '';
+}
+
+// ---------- tabla en pantalla y exportaciones
+const MAX_VISTA = 500;
+function pintar() {
+  $('concilia').textContent = filas.length.toLocaleString() + ' órdenes únicas' + (filas.length > MAX_VISTA ? ' · se muestran las primeras ' + MAX_VISTA + '; copiar y descargar incluyen todas' : '');
+  $('salida').innerHTML = '<table><tr>' + SALIDA.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>' +
+    filas.slice(0, MAX_VISTA).map(f => '<tr>' + f.map((c, i) => '<td' + (typeof c === 'number' ? ' class="n"' : '') + '>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+  $('resultados').hidden = false;
+  ['copiar', 'csv', 'excel'].forEach(id => { $(id).disabled = !filas.length; });
+}
+const tsv = () => (tsvCache = tsvCache || [SALIDA, ...filas].map(l => l.join('\t')).join('\n'));
+const csvCelda = v => { const t = String(v == null ? '' : v); return /[",\n;]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+$('copiar').onclick = async () => { await RH.util.copiarTexto(tsv()); RH.util.toast('Tabla copiada (' + filas.length.toLocaleString() + ' filas).', { tipo: 'ok' }); };
+$('csv').onclick = () => {
+  const txt = '﻿' + [SALIDA, ...filas].map(l => l.map(csvCelda).join(',')).join('\r\n');
+  RH.util.descargar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), 'ordenes_unicas.csv');
+};
+$('excel').onclick = async () => {
+  const wb = RH.xlsx.libro({ titulo: 'Órdenes únicas' });
+  const h = wb.hoja('Órdenes únicas');
+  h.fila(SALIDA, { estilo: 'header' });
+  filas.forEach(f => h.fila(f, { estilos: f.map(c => typeof c === 'number' ? 'int' : 'texto') }));
+  h.ancho([12, 16, 18, 22, 10, 22, 10, 14, 10, 10, 10, 10]);
+  h.congelar(1, 0);
+  RH.util.descargar(await wb.blob(), 'ordenes_unicas.xlsx');
+  RH.util.toast('Excel descargado.', { tipo: 'ok' });
+};
+
+function pintarAuditoria(A) {
+  const f = n => n.toLocaleString();
+  const { est } = A;
+  const filasA = [
+    ['Filas leídas (A1 / A2)', f(est[1].filas) + ' / ' + f(est[2].filas)],
+    ['Filas sin número de orden (excluidas)', f(est[1].sinId) + ' / ' + f(est[2].sinId)],
+    ['Repetidas dentro del mismo archivo (se usa la primera)', f(est[1].dup) + ' / ' + f(est[2].dup)],
+    ['Números de orden distintos (A1 / A2)', f(est[1].ids) + ' / ' + f(est[2].ids)],
+    ['Órdenes que están en los dos archivos', f(A.enAmbos)],
+    ['Solo en A1 / solo en A2', f(A.soloDe[1]) + ' / ' + f(A.soloDe[2])],
+    ['Órdenes únicas (= filas de UNIQUE(VSTACK(A1; A2)))', f(filas.length)],
+    ['Semana «N/A» (anteriores al inicio / sin fecha válida)', f(A.antes) + ' / ' + f(A.malas)]
+  ];
+  $('audConteos').innerHTML = filasA.map(r => '<tr><td>' + esc(r[0]) + '</td><td class="num"><strong>' + esc(r[1]) + '</strong></td></tr>').join('');
+  $('auditoriaCard').hidden = false;
+}
+
+armarArchivos();
+pintarMapa();
+$('go').onclick = procesar;
+RH.puente.enlazarTemporada($('inicio'), document.createElement('input'), $('inicioInfo'));
+RH.puente.invalidarAlCambiar([$('cfgArchivos'), $('pref'), $('inicio'), $('cfgCols')], () => {
+  if (procesando) { cambioDurante = true; return; }
+  if (!filas.length) return;
+  $('aviso').hidden = false;
+  $('aviso').textContent = 'La configuración cambió: pulsa «Crear tabla unificada» otra vez para actualizar la tabla.';
+});
+</script>
+</body>
+</html>

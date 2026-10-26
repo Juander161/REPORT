@@ -105,6 +105,12 @@
 
     reportes: [
       {
+        id: 'ordenes-unicas',
+        titulo: 'Órdenes únicas (2 archivos)',
+        archivo: 'reportes/ordenes-unicas.html',
+        descripcion: 'Une los dos archivos de órdenes activas en una sola tabla con una fila por orden única (UNIQUE + XLOOKUP), con la semana de cada orden. Base común de los reportes de 2 archivos.'
+      },
+      {
         id: 'tassel-only',
         titulo: 'Tassels Only por semana',
         archivo: 'reportes/tassel-only.html',
