@@ -62,6 +62,29 @@
     <div id="salida" class="table-wrap u-wrap"></div>
   </section>
 
+  <section class="card" id="totalesCard" hidden>
+    <h2 class="step-h"><span class="step-n">Σ</span> Totales de la tabla unificada (para comprobar contra tu hoja)</h2>
+    <div class="table-wrap"><table class="tbl-cfg" id="totTabla"></table></div>
+  </section>
+
+  <section class="card" id="repCard" hidden>
+    <h2 class="step-h"><span class="step-n">4</span> Reportes por semana</h2>
+    <p class="muted">Se calculan con la tabla de arriba. El tipo (REP TYPE) se agrupa en <strong>COLL</strong> si es C, COLL o contiene COLLEGE; todo lo demás es <strong>GREG</strong>. Cada reporte trae cantidades (suma) y órdenes (conteo).</p>
+    <div class="actions" id="repSel">
+      <label class="check"><input type="radio" name="rep" value="gowns" checked> GOWNS</label>
+      <label class="check"><input type="radio" name="rep" value="to"> TASSELS ONLY</label>
+      <label class="check"><input type="radio" name="rep" value="hs"> HOMESHIP</label>
+    </div>
+    <label class="check" id="wrapCeros" hidden><input type="checkbox" id="incluirCeros" checked> Contar como Tassels Only también las órdenes con todo en 0 (como el filtro manual: GOWNS, STOLES, CORDS, CAPS y HOODS en 0)</label>
+    <label class="fld" style="max-width:360px">Palabra de HOMESHIP en SO TYPE <input id="palabraHS" value="HOMESHIP"></label>
+    <p class="concilia" id="repResumen"></p>
+    <div id="repSalida" class="table-wrap u-wrap"></div>
+    <div class="actions">
+      <button id="repCopiar" class="btn" type="button">Copiar este reporte (para pegar en Excel)</button>
+      <button id="repExcel" class="btn" type="button">Descargar Excel con los 3 reportes y la tabla</button>
+    </div>
+  </section>
+
   <section class="card" id="auditoriaCard" hidden>
     <h2 class="step-h"><span class="step-n">✓</span> Auditoría</h2>
     <div class="table-wrap"><table class="tbl-cfg" id="audConteos"></table></div>
@@ -278,6 +301,7 @@ function pintar() {
   $('salida').innerHTML = '<table><tr>' + SALIDA.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>' +
     filas.slice(0, MAX_VISTA).map(f => '<tr>' + f.map((c, i) => '<td' + (typeof c === 'number' ? ' class="n"' : '') + '>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
   $('resultados').hidden = false;
+  pintarTotales(); pintarReportes();
   ['copiar', 'csv', 'excel'].forEach(id => { $(id).disabled = !filas.length; });
 }
 const tsv = () => (tsvCache = tsvCache || [SALIDA, ...filas].map(l => l.join('\t')).join('\n'));
@@ -314,6 +338,131 @@ function pintarAuditoria(A) {
   $('audConteos').innerHTML = filasA.map(r => '<tr><td>' + esc(r[0]) + '</td><td class="num"><strong>' + esc(r[1]) + '</strong></td></tr>').join('');
   $('auditoriaCard').hidden = false;
 }
+
+// ======================= reportes por semana =======================
+const NUM = v => { const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, '')); return isFinite(n) ? n : 0; };
+// COLL si es C o COLL o contiene COLLEGE en cualquier parte; todo lo demás es GREG
+const tipoDe = t => { const x = String(t == null ? '' : t).trim().toUpperCase(); return x === 'C' || x === 'COLL' || x.includes('COLLEGE') ? 'COLL' : 'GREG'; };
+const TIPOS = ['COLL', 'GREG'];
+const IX = { weeks: 0, id: 1, ent: 2, rep: 3, gowns: 4, so: 5, tassels: 6, mascot: 7, stoles: 8, cords: 9, hoods: 10, caps: 11 };
+const METRICAS = {
+  gowns: [['q', 'Cantidad GOWNS'], ['o', 'Órdenes con GOWNS']],
+  to: [['o', 'Órdenes Tassels Only'], ['q', 'Cantidad (TASSELS + MASCOT MEDALS)']],
+  hs: [['hso', 'Órdenes HOMESHIP'], ['too', 'Órdenes Tassels Only dentro'], ['reo', 'Órdenes Resta (HOMESHIP − Tassels Only)'],
+       ['hsq', 'Cantidad HOMESHIP (todos los productos)'], ['toq', 'Cantidad Tassels Only dentro'], ['req', 'Cantidad Resta']]
+};
+const TITULOS = { gowns: 'GOWNS por semana', to: 'TASSELS ONLY por semana', hs: 'HOMESHIP menos Tassels Only por semana' };
+let repActual = null;
+
+function calcularReportes() {
+  const inicio = Date.parse($('inicio').value), PAL = $('palabraHS').value.trim().toUpperCase();
+  const ceros = $('incluirCeros').checked;
+  const acc = new Map();         // semana ('N/A' | número) → tipo → {gq, go, too, toq, hso, hsq, tzero ...}
+  let maxSem = 0;
+  const tot = { ordenes: 0, tassel: 0, ceros: 0 };
+  for (const f of filas) {
+    const w = f[IX.weeks] === 'N/A' ? 'N/A' : +String(f[IX.weeks]).replace('Semana ', '');
+    if (w !== 'N/A' && w > maxSem) maxSem = w;
+    const t = tipoDe(f[IX.rep]);
+    const g = NUM(f[IX.gowns]), ta = NUM(f[IX.tassels]), m = NUM(f[IX.mascot]), st = NUM(f[IX.stoles]), co = NUM(f[IX.cords]), ho = NUM(f[IX.hoods]), ca = NUM(f[IX.caps]);
+    if (!acc.has(w)) acc.set(w, { COLL: {}, GREG: {} });
+    const a = acc.get(w)[t];
+    const add = (k, v) => { a[k] = (a[k] || 0) + v; };
+    add('go', g > 0 ? 1 : 0); add('gq', g);
+    // Tassels Only: GOWNS, STOLES, CORDS, CAPS y HOODS en 0; TASSELS y MASCOT MEDALS intactas
+    const otrosCero = g === 0 && st === 0 && co === 0 && ca === 0 && ho === 0;
+    const soloT = otrosCero && (ta + m > 0), todoCero = otrosCero && ta + m === 0;
+    const esTO = soloT || (ceros && todoCero);
+    tot.ordenes++; if (soloT) tot.tassel++; if (todoCero) tot.ceros++;
+    if (esTO) { add('o', 1); add('q', ta + m); }
+    if (String(f[IX.so]).toUpperCase().includes(PAL)) {
+      const piezas = g + ta + m + st + co + ho + ca;
+      add('hso', 1); add('hsq', piezas);
+      if (esTO) { add('too', 1); add('toq', ta + m); }
+    }
+  }
+  const ult = Math.max(52, maxSem);
+  const semanas = ['N/A', ...Array.from({ length: ult }, (_, i) => i + 1)];
+  const val = (w, t, k) => { const a = acc.get(w); return a ? ((a[t] || {})[k] || 0) : 0; };
+  const mapaK = { q: 'gq', o: 'go' };
+  const out = {};
+  for (const r of ['gowns', 'to', 'hs']) {
+    const cols = METRICAS[r];
+    const dato = (w, t, k) => {
+      if (r === 'gowns') return val(w, t, mapaK[k]);
+      if (r === 'to') return val(w, t, k);
+      if (k === 'reo') return val(w, t, 'hso') - val(w, t, 'too');
+      if (k === 'req') return val(w, t, 'hsq') - val(w, t, 'toq');
+      return val(w, t, k);
+    };
+    const enc = ['Semana', 'Inicio (lunes)'];
+    cols.forEach(([, nm]) => { TIPOS.forEach(t => enc.push(t + ' · ' + nm)); enc.push('Total · ' + nm); });
+    const lineas = [enc], acum = new Array(enc.length - 2).fill(0);
+    for (const w of semanas) {
+      const fila = [w === 'N/A' ? 'N/A' : 'Semana ' + w, w === 'N/A' ? '-' : new Date(inicio + (w - 1) * 7 * 86400000).toISOString().slice(0, 10)];
+      let c = 0;
+      cols.forEach(([k]) => {
+        const v = TIPOS.map(t => dato(w, t, k));
+        const todo = v.concat([v[0] + v[1]]);
+        todo.forEach(x => { fila.push(x); acum[c++] += x; });
+      });
+      lineas.push(fila);
+    }
+    lineas.push(['TOTAL', '', ...acum]);
+    out[r] = lineas;
+  }
+  return { out, tot, ceros };
+}
+
+function pintarReportes() {
+  if (!filas.length) { $('repCard').hidden = true; return; }
+  repActual = calcularReportes();
+  const r = document.querySelector('input[name="rep"]:checked').value;
+  $('wrapCeros').hidden = r === 'gowns';
+  const lineas = repActual.out[r], [cab, ...cuerpo] = lineas;
+  const { tot, ceros } = repActual;
+  $('repResumen').textContent = TITULOS[r] + ' · ' + tot.ordenes.toLocaleString() + ' órdenes en total' +
+    (r !== 'gowns' ? ' · Tassels Only (con TASSELS/MASCOT > 0): ' + tot.tassel.toLocaleString() + ' · con todo en 0: ' + tot.ceros.toLocaleString() + (ceros ? ' (incluidas)' : ' (no incluidas)') : '');
+  $('repSalida').innerHTML = '<table><tr>' + cab.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>' +
+    cuerpo.map((f, k) => '<tr' + (k === cuerpo.length - 1 ? ' class="tot"' : f[0] === 'N/A' ? ' class="na"' : '') + '>' + f.map((c, i) => '<td' + (i > 1 ? ' class="n"' : '') + '>' + esc(typeof c === 'number' ? c.toLocaleString('en-US') : c) + '</td>').join('') + '</tr>').join('') + '</table>';
+  $('repCard').hidden = false;
+}
+
+function pintarTotales() {
+  const prods = ['GOWNS', 'TASSELS', 'MASCOT MEDALS', 'STOLES', 'CORDS', 'HOODS', 'CAPS'];
+  const sumas = prods.map(p => filas.reduce((s, f) => s + NUM(f[SALIDA.indexOf(p)]), 0));
+  const porTipo = { COLL: filas.filter(f => tipoDe(f[IX.rep]) === 'COLL').length };
+  porTipo.GREG = filas.length - porTipo.COLL;
+  const nCol = f => f.toLocaleString('en-US');
+  $('totTabla').innerHTML = '<tr><th>Concepto</th><th>Total</th></tr>' +
+    '<tr><td>Órdenes únicas</td><td class="num"><strong>' + nCol(filas.length) + '</strong></td></tr>' +
+    '<tr><td>Órdenes COLL / GREG</td><td class="num">' + nCol(porTipo.COLL) + ' / ' + nCol(porTipo.GREG) + '</td></tr>' +
+    prods.map((p, i) => '<tr><td>Suma de ' + p + '</td><td class="num"><strong>' + nCol(sumas[i]) + '</strong></td></tr>').join('');
+  $('totalesCard').hidden = !filas.length;
+}
+
+document.querySelectorAll('input[name="rep"]').forEach(r => r.addEventListener('change', pintarReportes));
+$('incluirCeros').addEventListener('change', pintarReportes);
+$('palabraHS').addEventListener('input', pintarReportes);
+$('repCopiar').onclick = async () => {
+  const r = document.querySelector('input[name="rep"]:checked').value;
+  await RH.util.copiarTexto(repActual.out[r].map(l => l.join('\t')).join('\n'));
+  RH.util.toast('Reporte copiado.', { tipo: 'ok' });
+};
+$('repExcel').onclick = async () => {
+  const wb = RH.xlsx.libro({ titulo: 'Reportes por semana' });
+  for (const [r, nombre] of [['gowns', 'GOWNS'], ['to', 'TASSELS ONLY'], ['hs', 'HOMESHIP']]) {
+    const h = wb.hoja(nombre), [cab, ...cuerpo] = repActual.out[r];
+    h.fila(cab, { estilo: 'header' });
+    cuerpo.forEach((f, k) => h.fila(f, { estilos: f.map((c, i) => typeof c === 'number' ? (k === cuerpo.length - 1 ? 'totInt' : 'int') : (k === cuerpo.length - 1 ? 'totTexto' : 'texto')) }));
+    h.ancho([12, 14].concat(Array(cab.length - 2).fill(16))); h.congelar(1, 2);
+  }
+  const h = wb.hoja('Tabla'); h.fila(SALIDA, { estilo: 'header' });
+  filas.forEach(f => h.fila(f, { estilos: f.map(c => typeof c === 'number' ? 'int' : 'texto') }));
+  h.congelar(1, 0);
+  RH.util.descargar(await wb.blob(), 'reportes_por_semana.xlsx');
+  RH.util.toast('Excel descargado.', { tipo: 'ok' });
+};
 
 armarArchivos();
 pintarMapa();
