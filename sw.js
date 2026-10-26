@@ -39,6 +39,7 @@ const ARCHIVOS = [
   'reportes/gowns-activas.html',
   'reportes/dos-archivos.html',
   'reportes/comparativo-sy.html',
+  'reportes/ordenes-unicas.html',
   'data/base-compartida.js',
   'reportes/plantilla.html',
   'reportes/originales/CREARR2.html',
